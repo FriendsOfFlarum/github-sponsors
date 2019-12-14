@@ -1,0 +1,43 @@
+{
+  "name": "fof/github-sponsors",
+  "description": "GitHub Sponsors integration for your Flarum forum",
+  "keywords": [
+    "flarum"
+  ],
+  "type": "flarum-extension",
+  "license": "MIT",
+  "require": {
+    "flarum/core": "^0.1.0-beta.8",
+    "fof/components": ">=0.1.1",
+    "fof/console": "^0.5.0",
+    "guzzlehttp/guzzle": "6.*",
+    "knplabs/github-api": "^2.11",
+    "php-http/guzzle6-adapter": "^1.1"
+  },
+  "authors": [
+    {
+      "name": "David Sevilla Martin",
+      "email": "me+fof@datitisev.me",
+      "homepage": "https://datitisev.me",
+      "role": "Developer"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "FoF\\GitHubSponsors\\": "src/"
+    }
+  },
+  "extra": {
+    "flarum-extension": {
+      "title": "FoF GitHub Sponsors",
+      "icon": {
+        "name": "fab fa-github",
+        "backgroundColor": "#e74c3c",
+        "color": "#fff"
+      }
+    },
+    "flagrow": {
+      "discuss": ""
+    }
+  }
+}
