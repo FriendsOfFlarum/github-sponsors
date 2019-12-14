@@ -1,5 +1,14 @@
 <?php
 
+/*
+ * This file is part of fof/github-sponsors.
+ *
+ * Copyright (c) 2019 FriendsOfFlarum.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ */
+
 namespace FoF\GitHubSponsors\Console;
 
 use Carbon\Carbon;
@@ -7,7 +16,6 @@ use Exception;
 use Flarum\Group\Group;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\LoginProvider;
-use Flarum\User\RegistrationToken;
 use Flarum\User\User;
 use GuzzleHttp\Client;
 use Illuminate\Console\Command;
@@ -41,12 +49,13 @@ class UpdateCommand extends Command
         $this->settings = $settings;
         $this->prefix = Carbon::now()->format('M d, Y @ h:m A');
     }
+
     public function handle()
     {
         $this->line('');
 
         /**
-         * @var $group Group
+         * @var Group
          */
         $apiToken = $this->settings->get('fof-github-sponsors.api_token');
         $accountType = $this->settings->get('fof-github-sponsors.account_type');
@@ -56,7 +65,7 @@ class UpdateCommand extends Command
 
         if (!isset($apiToken) || empty($apiToken)) {
             throw new UnexpectedValueException('GitHub API key must be provided');
-        } else if ($accountType != 'user' && $accountType != 'organization') {
+        } elseif ($accountType != 'user' && $accountType != 'organization') {
             throw new UnexpectedValueException('Account type must be provided');
         } elseif (!isset($login) || empty($login)) {
             throw new UnexpectedValueException('User or organization login must be provided');
@@ -87,7 +96,7 @@ class UpdateCommand extends Command
                 ",
                 'variables' => ['login' => $login],
             ],
-            'headers' => ['Authorization' => "bearer $apiToken"]
+            'headers' => ['Authorization' => "bearer $apiToken"],
         ]);
         $json = json_decode($response->getBody()->getContents());
 
@@ -161,13 +170,15 @@ class UpdateCommand extends Command
         $this->info('Done.');
     }
 
-    protected function outputUsers($users, $prefix) {
+    protected function outputUsers($users, $prefix)
+    {
         foreach ($users as $user) {
             $this->outputUser($user, $prefix);
         }
     }
 
-    protected function outputUser($user, $prefix) {
+    protected function outputUser($user, $prefix)
+    {
         $this->info("|> $prefix #{$user->id} {$user->username}");
     }
 
