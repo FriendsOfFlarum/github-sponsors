@@ -116,7 +116,8 @@ class UpdateCommand extends Command
         $sponsorUsersIds = $sponsors->pluck('sponsor.databaseId')->all();
         $sponsorUsersEmails = $sponsors
             ->pluck('sponsor.email')
-            ->merge(LoginProvider::query()
+            ->merge(
+                LoginProvider::query()
                 ->where('provider', 'github')
                 ->whereIn('identifier', $sponsorUsersIds)
                 ->join('users', 'login_providers.user_id', '=', 'users.id')
