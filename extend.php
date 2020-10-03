@@ -35,11 +35,6 @@ return [
             ->appendOutputTo(storage_path('logs/fof-github-sponsors.log'));
     }),
 
-    new Extend\Compat(function (Dispatcher $events) {
-        $events->listen(Configuring::class, function (Configuring $event) {
-            if ($event->app->bound(Schedule::class)) {
-                $event->addCommand(UpdateCommand::class);
-            }
-        });
-    }),
+    (new Extend\Console())
+        ->command(UpdateCommand::class),
 ];
