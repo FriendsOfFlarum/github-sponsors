@@ -1,4 +1,7 @@
 import { settings } from '@fof-components';
+import Link from 'flarum/components/Link';
+
+
 const {
     SettingsModal,
     items: { StringItem, SelectItem },
@@ -19,7 +22,7 @@ app.initializers.add('fof/github-sponsors', () => {
             items: s => [
                 <p>
                     {app.translator.trans('fof-github-sponsors.admin.settings.desc', {
-                        a: <a route="https://github.com/settings/tokens" target="_blank" />,
+                        a: <Link href="https://github.com/settings/tokens" target="_blank" />,
                     })}
                 </p>,
                 <StringItem setting={s} name="fof-github-sponsors.api_token" required type="password">
