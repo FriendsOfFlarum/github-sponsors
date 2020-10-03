@@ -11,14 +11,12 @@
 
 namespace FoF\GitHubSponsors;
 
-use Flarum\Console\Event\Configuring;
 use Flarum\Extend;
 use FoF\Components\Extend\AddFofComponents;
 use FoF\Console\Extend\EnableConsole;
 use FoF\Console\Extend\ScheduleCommand;
 use FoF\GitHubSponsors\Console\UpdateCommand;
 use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Contracts\Events\Dispatcher;
 
 return [
     new AddFofComponents(),
