@@ -34,7 +34,7 @@ return [
         $schedule->command(UpdateCommand::class)
             ->hourly()
             ->withoutOverlapping()
-            ->appendOutputTo($paths->storage.('logs/fof-github-sponsors.log'));
+            ->appendOutputTo($paths->storage.('/logs/fof-github-sponsors.log'));
     }),
 
     (new Extend\Console())
