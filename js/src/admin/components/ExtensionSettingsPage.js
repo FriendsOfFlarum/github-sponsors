@@ -1,6 +1,6 @@
-import ExtensionPage from 'flarum/components/ExtensionPage';
+import ExtensionPage from 'flarum/admin/components/ExtensionPage';
 import { settings } from '@fof-components';
-import Link from 'flarum/components/Link';
+import Link from 'flarum/common/components/Link';
 
 const {
     items: { StringItem, SelectItem },

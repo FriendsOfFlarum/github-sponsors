@@ -14,10 +14,8 @@ namespace FoF\GitHubSponsors;
 use Flarum\Extend;
 use Flarum\Foundation\Paths;
 use FoF\Components\Extend\AddFofComponents;
-use FoF\Console\Extend\EnableConsole;
-use FoF\Console\Extend\ScheduleCommand;
 use FoF\GitHubSponsors\Console\UpdateCommand;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Console\Scheduling\Event;
 
 return [
     new AddFofComponents(),
@@ -28,16 +26,13 @@ return [
 
     new Extend\Locales(__DIR__.'/resources/locale'),
 
-    new EnableConsole(),
-
-    new ScheduleCommand(function (Schedule $schedule) {
-        $paths = app()->make(Paths::class);
-        $schedule->command(UpdateCommand::class)
-            ->hourly()
-            ->withoutOverlapping()
-            ->appendOutputTo($paths->storage.('/logs/fof-github-sponsors.log'));
-    }),
-
     (new Extend\Console())
-        ->command(UpdateCommand::class),
+        ->command(UpdateCommand::class)
+        ->schedule(UpdateCommand::class, function (Event $event) {
+            $paths = resolve(Paths::class);
+
+            $event->hourly()
+                ->withoutOverlapping()
+                ->appendOutputTo($paths->storage.('/logs/fof-github-sponsors.log'));
+        }),
 ];
