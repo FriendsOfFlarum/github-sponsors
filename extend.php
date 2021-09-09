@@ -13,13 +13,10 @@ namespace FoF\GitHubSponsors;
 
 use Flarum\Extend;
 use Flarum\Foundation\Paths;
-use FoF\Components\Extend\AddFofComponents;
 use FoF\GitHubSponsors\Console\UpdateCommand;
 use Illuminate\Console\Scheduling\Event;
 
 return [
-    new AddFofComponents(),
-
     (new Extend\Frontend('admin'))
         ->js(__DIR__.'/js/dist/admin.js')
         ->css(__DIR__.'/resources/less/admin.less'),

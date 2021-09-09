@@ -20,7 +20,6 @@
     ],
     "require": {
         "flarum/core": "^1.0.0",
-        "fof/components": "*",
         "guzzlehttp/guzzle": "^7.1",
         "knplabs/github-api": "^3.3",
         "php-http/guzzle7-adapter": "^0.1"

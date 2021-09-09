@@ -1,16 +1,10 @@
+import app from 'flarum/admin/app';
 import ExtensionPage from 'flarum/admin/components/ExtensionPage';
-import { settings } from '@fof-components';
 import Link from 'flarum/common/components/Link';
-
-const {
-    items: { StringItem, SelectItem },
-} = settings;
 
 export default class ExtensionSettingsPage extends ExtensionPage {
     oninit(vnode) {
         super.oninit(vnode);
-
-        this.setting = this.setting.bind(this);
     }
 
     getOptions() {
@@ -25,34 +19,44 @@ export default class ExtensionSettingsPage extends ExtensionPage {
         return [
             <div className="container">
                 <div className="GithubSponsorsSettings">
-                    <p>
-                        {app.translator.trans('fof-github-sponsors.admin.settings.desc', {
-                            a: <Link href="https://github.com/settings/tokens" target="_blank" />,
+                    <div className="Form">
+                        {this.buildSettingComponent({
+                            type: 'password',
+                            setting: 'fof-github-sponsors.api_token',
+                            label: app.translator.trans('fof-github-sponsors.admin.settings.api_token_label'),
+                            help: app.translator.trans('fof-github-sponsors.admin.settings.desc', {
+                                a: <Link href="https://github.com/settings/tokens" target="_blank" />,
+                            }),
                         })}
-                    </p>
-                    <StringItem setting={this.setting} name="fof-github-sponsors.api_token" required type="password">
-                        {app.translator.trans('fof-github-sponsors.admin.settings.api_token_label')}
-                    </StringItem>
-                    <label>{app.translator.trans('fof-github-sponsors.admin.settings.account_type_label')}</label>
-                    <SelectItem setting={this.setting} name="fof-github-sponsors.account_type" options={this.getOptions()} required />
-                    <StringItem setting={this.setting} name="fof-github-sponsors.login" required>
-                        {app.translator.trans('fof-github-sponsors.admin.settings.login_label')}
-                    </StringItem>
-                    <div className="Form-group">
-                        <label>{app.translator.trans('fof-github-sponsors.admin.settings.group_label')}</label>
 
-                        {SelectItem.component({
+                        {this.buildSettingComponent({
+                            type: 'select',
+                            setting: 'fof-github-sponsors.account_type',
+                            label: app.translator.trans('fof-github-sponsors.admin.settings.account_type_label'),
+                            options: this.getOptions(),
+                            required: true,
+                        })}
+
+                        {this.buildSettingComponent({
+                            type: 'string',
+                            setting: 'fof-github-sponsors.login',
+                            label: app.translator.trans('fof-github-sponsors.admin.settings.login_label'),
+                            required: true,
+                        })}
+
+                        {this.buildSettingComponent({
+                            type: 'select',
+                            setting: 'fof-github-sponsors.group_id',
+                            label: app.translator.trans('fof-github-sponsors.admin.settings.group_label'),
                             options: app.store.all('groups').reduce((o, g) => {
                                 o[g.id()] = g.nameSingular();
 
                                 return o;
                             }, {}),
-                            name: 'fof-github-sponsors.group_id',
-                            setting: this.setting,
                             required: true,
                         })}
+                        {this.submitButton()}
                     </div>
-                    {this.submitButton()}
                 </div>
             </div>,
         ];
