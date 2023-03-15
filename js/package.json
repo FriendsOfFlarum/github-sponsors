@@ -2,18 +2,21 @@
   "name": "@fof/github-sponsors",
   "version": "0.0.0",
   "private": true,
+  "prettier": "@flarum/prettier-config",
   "dependencies": {
-    "flarum-webpack-config": "^1.0.0",
-    "webpack": "^4.44.2",
-    "webpack-cli": "^4.8.0"
+    "@flarum/prettier-config": "^1.0.0",
+    "flarum-tsconfig": "^1.0.2",
+    "flarum-webpack-config": "^2.0.0",
+    "webpack": "^5.76.1",
+    "webpack-cli": "^5.0.1"
+  },
+  "devDependencies": {
+    "prettier": "^2.8.4"
   },
   "scripts": {
     "dev": "webpack --mode development --watch",
     "build": "webpack --mode production",
-    "lint": "prettier --single-quote --trailing-comma es5 --print-width 150 --tab-width 4 --write src"
-  },
-  "devDependencies": {
-    "flarum": "github:flarum/types#v1",
-    "prettier": "^2.3.0"
+    "format": "prettier --write src",
+    "format-check": "prettier --check src"
   }
 }

@@ -30,6 +30,6 @@ return [
 
             $event->hourly()
                 ->withoutOverlapping()
-                ->appendOutputTo($paths->storage.('/logs/fof-github-sponsors.log'));
+                ->appendOutputTo($paths->storage.'/logs/fof-github-sponsors.log');
         }),
 ];
