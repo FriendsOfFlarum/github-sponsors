@@ -49,11 +49,26 @@
         },
         "flagrow": {
             "discuss": "https://discuss.flarum.org/d/22260"
+        },
+        "flarum-cli": {
+            "modules": {
+                "githubActions": true
+            }
         }
     },
     "config": {
         "allow-plugins": {
             "php-http/discovery": true
         }
+    },
+    "require-dev": {
+        "flarum/phpstan": "*"
+    },
+    "scripts": {
+        "analyse:phpstan": "phpstan analyse",
+        "clear-cache:phpstan": "phpstan clear-result-cache"
+    },
+    "scripts-descriptions": {
+        "analyse:phpstan": "Run static analysis"
     }
 }
