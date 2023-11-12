@@ -54,7 +54,6 @@ class UpdateCommand extends Command
     {
         $this->line('');
 
-
         $apiToken = $this->settings->get('fof-github-sponsors.api_token');
         $accountType = $this->settings->get('fof-github-sponsors.account_type');
         $login = strtolower($this->settings->get('fof-github-sponsors.login'));
@@ -187,7 +186,7 @@ class UpdateCommand extends Command
 
     public function info($string, $verbosity = null)
     {
-        parent::info($this->prefix . ' | ' . $string, $verbosity);
+        parent::info($this->prefix.' | '.$string, $verbosity);
     }
 
     protected function updateUsersManaging(Collection $users)
