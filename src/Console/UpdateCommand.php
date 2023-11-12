@@ -54,20 +54,22 @@ class UpdateCommand extends Command
     {
         $this->line('');
 
-        /**
-         * @var Group
-         */
+
         $apiToken = $this->settings->get('fof-github-sponsors.api_token');
         $accountType = $this->settings->get('fof-github-sponsors.account_type');
         $login = strtolower($this->settings->get('fof-github-sponsors.login'));
         $groupId = $this->settings->get('fof-github-sponsors.group_id');
+
+        /**
+         * @var Group|null
+         */
         $group = isset($groupId) ? Group::find((int) $groupId) : null;
 
         if (!isset($apiToken) || empty($apiToken)) {
             throw new UnexpectedValueException('GitHub API key must be provided');
         } elseif ($accountType != 'user' && $accountType != 'organization') {
             throw new UnexpectedValueException('Account type must be provided');
-        } elseif (!isset($login) || empty($login)) {
+        } elseif (empty($login)) {
             throw new UnexpectedValueException('User or organization login must be provided');
         } elseif (!isset($group)) {
             throw new UnexpectedValueException("Invalid group ID: '$groupId'");
@@ -118,10 +120,10 @@ class UpdateCommand extends Command
             ->pluck('sponsor.email')
             ->merge(
                 LoginProvider::query()
-                ->where('provider', 'github')
-                ->whereIn('identifier', $sponsorUsersIds)
-                ->join('users', 'login_providers.user_id', '=', 'users.id')
-                ->pluck('users.email')
+                    ->where('provider', 'github')
+                    ->whereIn('identifier', $sponsorUsersIds)
+                    ->join('users', 'login_providers.user_id', '=', 'users.id')
+                    ->pluck('users.email')
             )
             ->filter()
             ->unique();
@@ -157,7 +159,7 @@ class UpdateCommand extends Command
 
         // Add group to users that should have it
         if ($sponsorUsers->isNotEmpty()) {
-            $sponsorUsers->each(function ($user) use ($usersManaging, $group, &$num) {
+            $sponsorUsers->each(function ($user) use ($usersManaging, $group) {
                 if (!$user->groups()->find($group->id)) {
                     $this->outputUser($user, '+');
                     $user->groups()->attach($group->id);
@@ -185,7 +187,7 @@ class UpdateCommand extends Command
 
     public function info($string, $verbosity = null)
     {
-        parent::info($this->prefix.' | '.$string, $verbosity);
+        parent::info($this->prefix . ' | ' . $string, $verbosity);
     }
 
     protected function updateUsersManaging(Collection $users)
