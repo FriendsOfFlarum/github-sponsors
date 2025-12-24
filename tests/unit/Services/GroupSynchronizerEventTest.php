@@ -63,7 +63,7 @@ class GroupSynchronizerEventTest extends TestCase
 
         $sponsorData = (object) [
             'sponsor' => (object) [
-                'email' => 'new@example.com',
+                'email'      => 'new@example.com',
                 'databaseId' => 12345,
             ],
         ];
@@ -184,7 +184,7 @@ class GroupSynchronizerEventTest extends TestCase
 
         $sponsorData = (object) [
             'sponsor' => (object) [
-                'email' => 'new@example.com',
+                'email'      => 'new@example.com',
                 'databaseId' => 12345,
             ],
         ];
@@ -228,9 +228,16 @@ class GroupSynchronizerEventTest extends TestCase
         $user = Mockery::mock(User::class)->makePartial();
         $user->shouldReceive('setAttribute')->andReturnSelf();
         $user->shouldReceive('getAttribute')->andReturnUsing(function ($key) use ($id, $email) {
-            if ($key === 'id') return $id;
-            if ($key === 'email') return $email;
-            if ($key === 'username') return "user$id";
+            if ($key === 'id') {
+                return $id;
+            }
+            if ($key === 'email') {
+                return $email;
+            }
+            if ($key === 'username') {
+                return "user$id";
+            }
+
             return null;
         });
 
@@ -276,8 +283,13 @@ class GroupSynchronizerEventTest extends TestCase
         $group = Mockery::mock(Group::class)->makePartial();
         $group->shouldReceive('setAttribute')->andReturnSelf();
         $group->shouldReceive('getAttribute')->andReturnUsing(function ($key) {
-            if ($key === 'id') return 1;
-            if ($key === 'name_singular') return 'Test Group';
+            if ($key === 'id') {
+                return 1;
+            }
+            if ($key === 'name_singular') {
+                return 'Test Group';
+            }
+
             return null;
         });
 
@@ -310,8 +322,13 @@ class GroupSynchronizerEventTest extends TestCase
         $group = Mockery::mock(Group::class)->makePartial();
         $group->shouldReceive('setAttribute')->andReturnSelf();
         $group->shouldReceive('getAttribute')->andReturnUsing(function ($key) {
-            if ($key === 'id') return 1;
-            if ($key === 'name_singular') return 'Test Group';
+            if ($key === 'id') {
+                return 1;
+            }
+            if ($key === 'name_singular') {
+                return 'Test Group';
+            }
+
             return null;
         });
 

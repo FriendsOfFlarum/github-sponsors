@@ -13,7 +13,6 @@ namespace FoF\GitHubSponsors\Tests\Unit\Services;
 
 use Flarum\Group\Group;
 use Flarum\Settings\SettingsRepositoryInterface;
-use Flarum\User\LoginProvider;
 use Flarum\User\User;
 use FoF\GitHubSponsors\Services\GroupSynchronizer;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -217,9 +216,16 @@ class GroupSynchronizerTest extends TestCase
         $user = Mockery::mock(User::class)->makePartial();
         $user->shouldReceive('setAttribute')->andReturnSelf();
         $user->shouldReceive('getAttribute')->andReturnUsing(function ($key) use ($id, $email) {
-            if ($key === 'id') return $id;
-            if ($key === 'email') return $email;
-            if ($key === 'username') return "user$id";
+            if ($key === 'id') {
+                return $id;
+            }
+            if ($key === 'email') {
+                return $email;
+            }
+            if ($key === 'username') {
+                return "user$id";
+            }
+
             return null;
         });
 
@@ -279,8 +285,13 @@ class GroupSynchronizerTest extends TestCase
         $group = Mockery::mock(Group::class)->makePartial();
         $group->shouldReceive('setAttribute')->andReturnSelf();
         $group->shouldReceive('getAttribute')->andReturnUsing(function ($key) {
-            if ($key === 'id') return 1;
-            if ($key === 'name_singular') return 'Test Group';
+            if ($key === 'id') {
+                return 1;
+            }
+            if ($key === 'name_singular') {
+                return 'Test Group';
+            }
+
             return null;
         });
 

@@ -38,7 +38,7 @@ class SponsorEventTest extends TestCase
     {
         $user = $this->createMockUser(1, 'test@example.com');
         $sponsorData = (object) [
-            'email' => 'test@example.com',
+            'email'      => 'test@example.com',
             'databaseId' => 12345,
         ];
 
@@ -71,10 +71,10 @@ class SponsorEventTest extends TestCase
     {
         $user = $this->createMockUser(1, 'sponsor@example.com');
         $sponsorData = (object) [
-            'email' => 'sponsor@example.com',
+            'email'      => 'sponsor@example.com',
             'databaseId' => 99999,
-            'login' => 'testuser',
-            'name' => 'Test User',
+            'login'      => 'testuser',
+            'name'       => 'Test User',
         ];
 
         $event = new SponsorAdded($user, $sponsorData);
@@ -95,9 +95,16 @@ class SponsorEventTest extends TestCase
         $user = Mockery::mock(User::class)->makePartial();
         $user->shouldReceive('setAttribute')->andReturnSelf();
         $user->shouldReceive('getAttribute')->andReturnUsing(function ($key) use ($id, $email) {
-            if ($key === 'id') return $id;
-            if ($key === 'email') return $email;
-            if ($key === 'username') return "user$id";
+            if ($key === 'id') {
+                return $id;
+            }
+            if ($key === 'email') {
+                return $email;
+            }
+            if ($key === 'username') {
+                return "user$id";
+            }
+
             return null;
         });
 

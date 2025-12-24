@@ -103,7 +103,7 @@ class UpdateCommand extends Command
             $group = Group::find((int) $groupId);
 
             if ($verbose) {
-                $this->info("Configuration:");
+                $this->info('Configuration:');
                 $this->info("|> Account type: $accountType");
                 $this->info("|> Login: $login");
                 $this->info("|> Target group: {$group->name_singular} (ID: {$group->id})");
@@ -165,7 +165,7 @@ class UpdateCommand extends Command
                             $matchMethods[] = "GitHub OAuth (ID: {$githubProvider->identifier})";
                         }
 
-                        $matchInfo = !empty($matchMethods) ? ' [matched by: ' . implode(', ', $matchMethods) . ']' : '';
+                        $matchInfo = !empty($matchMethods) ? ' [matched by: '.implode(', ', $matchMethods).']' : '';
                         $this->info("|> #{$user->id} {$user->username} ({$user->email}){$matchInfo}");
                     }
                     $this->line('');
@@ -224,7 +224,7 @@ class UpdateCommand extends Command
 
             if ($verbose) {
                 $this->line('');
-                $this->info("Summary:");
+                $this->info('Summary:');
                 $this->info("|> Users staying in group: {$usersStaying->count()}");
                 $this->info("|> Users to remove: {$changes['removed']->count()}");
                 $this->info("|> Users to add: {$changes['added']->count()}");

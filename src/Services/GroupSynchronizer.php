@@ -196,7 +196,7 @@ class GroupSynchronizer
      * @param Group            $group
      * @param Collection<User> $sponsorUsers
      * @param Collection       $usersManaging
-     * @param bool             $dryRun If true, no changes will be made
+     * @param bool             $dryRun        If true, no changes will be made
      *
      * @return Collection<User> Users that were added
      */
