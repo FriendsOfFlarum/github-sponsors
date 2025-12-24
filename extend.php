@@ -18,18 +18,18 @@ use Illuminate\Console\Scheduling\Event;
 
 return [
     (new Extend\Frontend('admin'))
-        ->js(__DIR__.'/js/dist/admin.js')
-        ->css(__DIR__.'/resources/less/admin.less'),
+        ->js(__DIR__ . '/js/dist/admin.js')
+        ->css(__DIR__ . '/resources/less/admin.less'),
 
-    new Extend\Locales(__DIR__.'/resources/locale'),
+    new Extend\Locales(__DIR__ . '/resources/locale'),
 
     (new Extend\Console())
-        ->command(UpdateCommand::class),
-    // ->schedule(UpdateCommand::class, function (Event $event) {
-    //     $paths = resolve(Paths::class);
+        ->command(UpdateCommand::class)
+        ->schedule(UpdateCommand::class, function (Event $event) {
+            $paths = resolve(Paths::class);
 
-    //     $event->hourly()
-    //         ->withoutOverlapping()
-    //         ->appendOutputTo($paths->storage . '/logs/fof-github-sponsors.log');
-    // }),
+            $event->hourly()
+                ->withoutOverlapping()
+                ->appendOutputTo($paths->storage . '/logs/fof-github-sponsors.log');
+        }),
 ];
