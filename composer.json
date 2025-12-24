@@ -19,7 +19,7 @@
         }
     ],
     "require": {
-        "flarum/core": "^1.2.0",
+        "flarum/core": "^2.0.0-beta",
         "guzzlehttp/guzzle": "^7.1"
     },
     "authors": [
@@ -61,8 +61,8 @@
         }
     },
     "require-dev": {
-        "flarum/phpstan": "*",
-        "flarum/testing": "^1.0.0"
+        "flarum/phpstan": "^2.0.0-beta",
+        "flarum/testing": "^2.0.0-beta"
     },
     "scripts": {
         "analyse:phpstan": "phpstan analyse",
