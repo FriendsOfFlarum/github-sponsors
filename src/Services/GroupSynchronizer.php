@@ -18,7 +18,11 @@ use Illuminate\Support\Collection;
 
 class GroupSynchronizer
 {
-    private SettingsRepositoryInterface $settings;
+    /**
+     * @var SettingsRepositoryInterface
+     */
+    private $settings;
+
     private const MANAGED_USERS_KEY = 'fof-github-sponsors.users';
 
     public function __construct(SettingsRepositoryInterface $settings)
@@ -50,7 +54,9 @@ class GroupSynchronizer
 
         // Update managed users list after removals
         foreach ($usersToRemove as $user) {
-            $usersManaging = $usersManaging->reject(fn ($id) => $id == $user->id);
+            $usersManaging = $usersManaging->reject(function ($id) use ($user) {
+                return $id == $user->id;
+            });
         }
 
         // Add group to users who should have it

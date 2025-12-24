@@ -34,10 +34,25 @@ class UpdateCommand extends Command
 
     protected $prefix;
 
-    private SettingsRepositoryInterface $settings;
-    private GitHubSponsorsClient $client;
-    private SponsorMatcher $matcher;
-    private GroupSynchronizer $synchronizer;
+    /**
+     * @var SettingsRepositoryInterface
+     */
+    private $settings;
+
+    /**
+     * @var GitHubSponsorsClient
+     */
+    private $client;
+
+    /**
+     * @var SponsorMatcher
+     */
+    private $matcher;
+
+    /**
+     * @var GroupSynchronizer
+     */
+    private $synchronizer;
 
     public function __construct(
         SettingsRepositoryInterface $settings,
