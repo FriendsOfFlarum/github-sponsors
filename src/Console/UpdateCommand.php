@@ -38,45 +38,14 @@ class UpdateCommand extends Command
 
     protected $prefix;
 
-    /**
-     * @var SettingsRepositoryInterface
-     */
-    private $settings;
-
-    /**
-     * @var GitHubSponsorsClient
-     */
-    private $client;
-
-    /**
-     * @var SponsorMatcher
-     */
-    private $matcher;
-
-    /**
-     * @var GroupSynchronizer
-     */
-    private $synchronizer;
-
-    /**
-     * @var LoggerInterface
-     */
-    private $logger;
-
     public function __construct(
-        SettingsRepositoryInterface $settings,
-        GitHubSponsorsClient $client,
-        SponsorMatcher $matcher,
-        GroupSynchronizer $synchronizer,
-        LoggerInterface $logger
+        private SettingsRepositoryInterface $settings,
+        private GitHubSponsorsClient $client,
+        private SponsorMatcher $matcher,
+        private GroupSynchronizer $synchronizer,
+        private LoggerInterface $logger
     ) {
         parent::__construct();
-
-        $this->settings = $settings;
-        $this->client = $client;
-        $this->matcher = $matcher;
-        $this->synchronizer = $synchronizer;
-        $this->logger = $logger;
         $this->prefix = Carbon::now()->format('M d, Y @ h:m A');
     }
 

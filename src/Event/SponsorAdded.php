@@ -19,26 +19,9 @@ use Flarum\User\User;
 class SponsorAdded
 {
     /**
-     * The Flarum user who was added.
-     *
-     * @var User
-     */
-    public $user;
-
-    /**
-     * The GitHub sponsor data from the API.
-     *
-     * @var object|null
-     */
-    public $sponsorData;
-
-    /**
-     * @param User        $user        The Flarum user who was added as a sponsor
      * @param object|null $sponsorData The GitHub sponsor data (contains email, databaseId, etc.)
      */
-    public function __construct(User $user, ?object $sponsorData = null)
+    public function __construct(public User $user, public ?object $sponsorData = null)
     {
-        $this->user = $user;
-        $this->sponsorData = $sponsorData;
     }
 }

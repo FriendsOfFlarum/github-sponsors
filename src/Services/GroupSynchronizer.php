@@ -21,22 +21,10 @@ use Illuminate\Support\Collection;
 
 class GroupSynchronizer
 {
-    /**
-     * @var SettingsRepositoryInterface
-     */
-    private $settings;
-
-    /**
-     * @var Dispatcher
-     */
-    private $events;
-
     private const MANAGED_USERS_KEY = 'fof-github-sponsors.users';
 
-    public function __construct(SettingsRepositoryInterface $settings, Dispatcher $events)
+    public function __construct(private SettingsRepositoryInterface $settings, private Dispatcher $events)
     {
-        $this->settings = $settings;
-        $this->events = $events;
     }
 
     /**
