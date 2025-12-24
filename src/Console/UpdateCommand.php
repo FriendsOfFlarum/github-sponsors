@@ -12,15 +12,12 @@
 namespace FoF\GitHubSponsors\Console;
 
 use Carbon\Carbon;
-use Exception;
 use Flarum\Group\Group;
 use Flarum\Settings\SettingsRepositoryInterface;
-use Flarum\User\LoginProvider;
-use Flarum\User\User;
-use GuzzleHttp\Client;
+use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
+use FoF\GitHubSponsors\Services\GroupSynchronizer;
+use FoF\GitHubSponsors\Services\SponsorMatcher;
 use Illuminate\Console\Command;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Collection;
 use UnexpectedValueException;
 
 class UpdateCommand extends Command
@@ -37,16 +34,23 @@ class UpdateCommand extends Command
 
     protected $prefix;
 
-    /**
-     * @var SettingsRepositoryInterface
-     */
-    private $settings;
+    private SettingsRepositoryInterface $settings;
+    private GitHubSponsorsClient $client;
+    private SponsorMatcher $matcher;
+    private GroupSynchronizer $synchronizer;
 
-    public function __construct(SettingsRepositoryInterface $settings)
-    {
+    public function __construct(
+        SettingsRepositoryInterface $settings,
+        GitHubSponsorsClient $client,
+        SponsorMatcher $matcher,
+        GroupSynchronizer $synchronizer
+    ) {
         parent::__construct();
 
         $this->settings = $settings;
+        $this->client = $client;
+        $this->matcher = $matcher;
+        $this->synchronizer = $synchronizer;
         $this->prefix = Carbon::now()->format('M d, Y @ h:m A');
     }
 
@@ -54,122 +58,68 @@ class UpdateCommand extends Command
     {
         $this->line('');
 
+        // Load and validate settings
         $apiToken = $this->settings->get('fof-github-sponsors.api_token');
         $accountType = $this->settings->get('fof-github-sponsors.account_type');
         $login = strtolower($this->settings->get('fof-github-sponsors.login'));
         $groupId = $this->settings->get('fof-github-sponsors.group_id');
 
-        /**
-         * @var Group|null
-         */
-        $group = isset($groupId) ? Group::find((int) $groupId) : null;
+        $this->validateSettings($apiToken, $accountType, $login, $groupId);
 
-        if (!isset($apiToken) || empty($apiToken)) {
-            throw new UnexpectedValueException('GitHub API key must be provided');
-        } elseif ($accountType != 'user' && $accountType != 'organization') {
-            throw new UnexpectedValueException('Account type must be provided');
-        } elseif (empty($login)) {
-            throw new UnexpectedValueException('User or organization login must be provided');
-        } elseif (!isset($group)) {
-            throw new UnexpectedValueException("Invalid group ID: '$groupId'");
-        }
+        $group = Group::find((int) $groupId);
 
         $this->info('Retrieving GitHub sponsors...');
 
-        // Retrieve emails from Open Collective GraphQL API
-        $client = new Client();
-        $response = $client->post('https://api.github.com/graphql', [
-            'json' => [
-                'query' => "
-                    query $accountType(\$login: String!) {
-                      $accountType(login: \$login) {
-                        name
-                        sponsorshipsAsMaintainer(first: 100) {
-                          nodes {
-                            sponsor {
-                              databaseId
-                              email
-                            }
-                          }
-                        }
-                      }
-                    }
-                ",
-                'variables' => ['login' => $login],
-            ],
-            'headers' => ['Authorization' => "bearer $apiToken"],
-        ]);
-        $json = json_decode($response->getBody()->getContents());
+        // Fetch sponsors from GitHub
+        $result = $this->client->fetchSponsors($apiToken, $accountType, $login);
+        $sponsors = $result['sponsors'];
+        $maintainerName = $result['maintainer'];
 
-        if (isset($json->errors)) {
-            throw new Exception(implode("\n", Arr::pluck($json->errors, 'message')));
-        }
+        $this->info("|> ".count($sponsors)." sponsors of {$maintainerName} ($accountType)");
 
-        if (!isset($json->data->$accountType)) {
-            throw new Exception("Login '$login' not found");
-        }
-
-        $maintainer = $json->data->$accountType;
-        $sponsors = collect($maintainer->sponsorshipsAsMaintainer->nodes);
-
-        $this->info("|> {$sponsors->count()} sponsors of {$maintainer->name} ($accountType)");
-
-        $sponsorUsersIds = $sponsors->pluck('sponsor.databaseId')->all();
-        $sponsorUsersEmails = $sponsors
-            ->pluck('sponsor.email')
-            ->merge(
-                LoginProvider::query()
-                    ->where('provider', 'github')
-                    ->whereIn('identifier', $sponsorUsersIds)
-                    ->join('users', 'login_providers.user_id', '=', 'users.id')
-                    ->pluck('users.email')
-            )
-            ->filter()
-            ->unique();
-        $sponsorUsers = User::query()->whereIn('email', $sponsorUsersEmails)->get();
-
+        // Match sponsors to Flarum users
+        $sponsorUsers = $this->matcher->matchSponsorsToUsers($sponsors);
         $this->info("|> -> {$sponsorUsers->count()} registered");
 
-        // Remove group from users that have it but shouldn't
-        $usersManaging = collect(json_decode($this->settings->get('fof-github-sponsors.users', '[]')));
-        $usersToRemove = $group->users()
-            ->leftJoin('login_providers', 'login_providers.user_id', '=', 'users.id')
-            ->whereIn('users.id', $usersManaging)
-            ->whereNotIn('users.email', $sponsorUsersEmails)
-            ->whereNotIn('login_providers.identifier', $sponsorUsersIds)
-            ->get();
-
+        // Synchronize group memberships
         $this->info('Applying group changes...');
 
-        $group->users()->detach($usersToRemove->map->id);
+        $changes = $this->synchronizer->synchronize(
+            $group,
+            $sponsorUsers,
+            $this->matcher->getSponsorEmails($sponsors)->all(),
+            $this->matcher->getSponsorIds($sponsors)
+        );
 
-        foreach ($usersToRemove as $user) {
-            $usersManaging = $usersManaging->reject($user->id);
-        }
-
-        $this->updateUsersManaging($usersManaging);
-        $this->outputUsers($usersToRemove, '-');
-
-        if ($sponsorUsers->isEmpty()) {
-            $this->info('Done.');
-
-            return;
-        }
-
-        // Add group to users that should have it
-        if ($sponsorUsers->isNotEmpty()) {
-            $sponsorUsers->each(function ($user) use ($usersManaging, $group) {
-                if (!$user->groups()->find($group->id)) {
-                    $this->outputUser($user, '+');
-                    $user->groups()->attach($group->id);
-                    $usersManaging->push($user->id);
-                }
-            });
-        }
-
-        $this->updateUsersManaging($usersManaging);
+        $this->outputUsers($changes['removed'], '-');
+        $this->outputUsers($changes['added'], '+');
 
         $this->info('Done.');
+    }
+
+    /**
+     * Validate configuration settings.
+     *
+     * @throws UnexpectedValueException
+     */
+    private function validateSettings(?string $apiToken, ?string $accountType, ?string $login, ?string $groupId): void
+    {
+        if (!isset($apiToken) || empty($apiToken)) {
+            throw new UnexpectedValueException('GitHub API key must be provided');
+        }
+
+        if ($accountType != 'user' && $accountType != 'organization') {
+            throw new UnexpectedValueException('Account type must be provided');
+        }
+
+        if (empty($login)) {
+            throw new UnexpectedValueException('User or organization login must be provided');
+        }
+
+        $group = isset($groupId) ? Group::find((int) $groupId) : null;
+        if (!isset($group)) {
+            throw new UnexpectedValueException("Invalid group ID: '$groupId'");
+        }
     }
 
     protected function outputUsers($users, $prefix)
@@ -187,10 +137,5 @@ class UpdateCommand extends Command
     public function info($string, $verbosity = null)
     {
         parent::info($this->prefix.' | '.$string, $verbosity);
-    }
-
-    protected function updateUsersManaging(Collection $users)
-    {
-        $this->settings->set('fof-github-sponsors.users', $users->values()->unique()->toJson());
     }
 }

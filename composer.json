@@ -20,9 +20,7 @@
     ],
     "require": {
         "flarum/core": "^1.2.0",
-        "guzzlehttp/guzzle": "^7.1",
-        "knplabs/github-api": "^3.3",
-        "php-http/guzzle7-adapter": "^0.1"
+        "guzzlehttp/guzzle": "^7.1"
     },
     "authors": [
         {
@@ -52,7 +50,8 @@
         },
         "flarum-cli": {
             "modules": {
-                "githubActions": true
+                "githubActions": true,
+                "backendTesting": true
             }
         }
     },
@@ -62,13 +61,32 @@
         }
     },
     "require-dev": {
-        "flarum/phpstan": "*"
+        "flarum/phpstan": "*",
+        "flarum/testing": "^1.0.0"
     },
     "scripts": {
         "analyse:phpstan": "phpstan analyse",
-        "clear-cache:phpstan": "phpstan clear-result-cache"
+        "clear-cache:phpstan": "phpstan clear-result-cache",
+        "test": [
+            "@test:unit",
+            "@test:integration"
+        ],
+        "test:unit": "phpunit -c tests/phpunit.unit.xml",
+        "test:integration": "phpunit -c tests/phpunit.integration.xml",
+        "test:setup": "@php tests/integration/setup.php"
     },
     "scripts-descriptions": {
-        "analyse:phpstan": "Run static analysis"
-    }
+        "analyse:phpstan": "Run static analysis",
+        "test": "Runs all tests.",
+        "test:unit": "Runs all unit tests.",
+        "test:integration": "Runs all integration tests.",
+        "test:setup": "Sets up a database for use with integration tests. Execute this only once."
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FoF\\GitHubSponsors\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "beta",
+    "prefer-stable": true
 }
