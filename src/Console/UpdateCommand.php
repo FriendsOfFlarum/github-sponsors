@@ -12,15 +12,16 @@
 namespace FoF\GitHubSponsors\Console;
 
 use Carbon\Carbon;
-use Exception;
 use Flarum\Group\Group;
 use Flarum\Settings\SettingsRepositoryInterface;
-use Flarum\User\LoginProvider;
-use Flarum\User\User;
-use GuzzleHttp\Client;
+use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
+use FoF\GitHubSponsors\Services\GroupSynchronizer;
+use FoF\GitHubSponsors\Services\SponsorMatcher;
+use GuzzleHttp\Exception\RequestException;
 use Illuminate\Console\Command;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Collection;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Throwable;
 use UnexpectedValueException;
 
 class UpdateCommand extends Command
@@ -28,7 +29,7 @@ class UpdateCommand extends Command
     /**
      * {@inheritdoc}
      */
-    protected $signature = 'fof:github-sponsors:update';
+    protected $signature = 'fof:github-sponsors:update {--dry-run : Show what changes would be made without applying them}';
 
     /**
      * {@inheritdoc}
@@ -42,11 +43,40 @@ class UpdateCommand extends Command
      */
     private $settings;
 
-    public function __construct(SettingsRepositoryInterface $settings)
-    {
+    /**
+     * @var GitHubSponsorsClient
+     */
+    private $client;
+
+    /**
+     * @var SponsorMatcher
+     */
+    private $matcher;
+
+    /**
+     * @var GroupSynchronizer
+     */
+    private $synchronizer;
+
+    /**
+     * @var LoggerInterface
+     */
+    private $logger;
+
+    public function __construct(
+        SettingsRepositoryInterface $settings,
+        GitHubSponsorsClient $client,
+        SponsorMatcher $matcher,
+        GroupSynchronizer $synchronizer,
+        LoggerInterface $logger
+    ) {
         parent::__construct();
 
         $this->settings = $settings;
+        $this->client = $client;
+        $this->matcher = $matcher;
+        $this->synchronizer = $synchronizer;
+        $this->logger = $logger;
         $this->prefix = Carbon::now()->format('M d, Y @ h:m A');
     }
 
@@ -54,122 +84,255 @@ class UpdateCommand extends Command
     {
         $this->line('');
 
-        $apiToken = $this->settings->get('fof-github-sponsors.api_token');
-        $accountType = $this->settings->get('fof-github-sponsors.account_type');
-        $login = strtolower($this->settings->get('fof-github-sponsors.login'));
-        $groupId = $this->settings->get('fof-github-sponsors.group_id');
+        $dryRun = $this->option('dry-run');
+        $verbose = $this->getOutput()->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE;
 
-        /**
-         * @var Group|null
-         */
-        $group = isset($groupId) ? Group::find((int) $groupId) : null;
+        if ($dryRun) {
+            $this->info('DRY RUN MODE - No changes will be made');
+        }
 
+        try {
+            // Load and validate settings
+            $apiToken = $this->settings->get('fof-github-sponsors.api_token');
+            $accountType = $this->settings->get('fof-github-sponsors.account_type');
+            $login = strtolower($this->settings->get('fof-github-sponsors.login'));
+            $groupId = $this->settings->get('fof-github-sponsors.group_id');
+
+            $this->validateSettings($apiToken, $accountType, $login, $groupId);
+
+            $group = Group::find((int) $groupId);
+
+            if ($verbose) {
+                $this->info('Configuration:');
+                $this->info("|> Account type: $accountType");
+                $this->info("|> Login: $login");
+                $this->info("|> Target group: {$group->name_singular} (ID: {$group->id})");
+                $this->line('');
+            }
+
+            $this->info('Retrieving GitHub sponsors...');
+
+            // Fetch sponsors from GitHub
+            $result = $this->client->fetchSponsors($apiToken, $accountType, $login);
+            $sponsors = $result['sponsors'];
+            $maintainerName = $result['maintainer'];
+
+            $this->info('|> '.count($sponsors)." sponsors of {$maintainerName} ($accountType)");
+
+            if ($verbose && count($sponsors) > 0) {
+                $this->line('');
+                $this->info('Sponsor details from GitHub:');
+                foreach ($sponsors as $sponsor) {
+                    $sponsorData = $sponsor->sponsor ?? $sponsor;
+                    $email = $sponsorData->email ?? 'no email';
+                    $id = $sponsorData->databaseId ?? 'no ID';
+                    $this->info("|> GitHub ID: $id | Email: $email");
+                }
+                $this->line('');
+            }
+
+            // Match sponsors to Flarum users
+            $sponsorUsers = $this->matcher->matchSponsorsToUsers($sponsors);
+            $registeredCount = $sponsorUsers->count();
+            $unregisteredCount = count($sponsors) - $registeredCount;
+
+            $this->info("|> -> {$registeredCount} registered, {$unregisteredCount} not registered");
+
+            if ($verbose) {
+                if ($registeredCount > 0) {
+                    $this->line('');
+                    $this->info('Matched Flarum users:');
+
+                    // Get sponsor data for matching
+                    $sponsorEmails = $this->matcher->getSponsorEmails($sponsors)->all();
+                    $sponsorIds = $this->matcher->getSponsorIds($sponsors);
+
+                    foreach ($sponsorUsers as $user) {
+                        $matchMethods = [];
+
+                        // Check if matched by email
+                        if (in_array($user->email, $sponsorEmails)) {
+                            $matchMethods[] = 'email';
+                        }
+
+                        // Check if matched by GitHub OAuth provider
+                        $githubProvider = $user->loginProviders()
+                            ->where('provider', 'github')
+                            ->whereIn('identifier', $sponsorIds)
+                            ->first();
+
+                        if ($githubProvider) {
+                            $matchMethods[] = "GitHub OAuth (ID: {$githubProvider->identifier})";
+                        }
+
+                        $matchInfo = !empty($matchMethods) ? ' [matched by: '.implode(', ', $matchMethods).']' : '';
+                        $this->info("|> #{$user->id} {$user->username} ({$user->email}){$matchInfo}");
+                    }
+                    $this->line('');
+                }
+
+                if ($unregisteredCount > 0) {
+                    $this->info('Unmatched sponsors (not registered on Flarum):');
+                    $matchedEmails = $sponsorUsers->pluck('email')->all();
+                    $matchedGithubIds = $sponsorUsers->flatMap(function ($user) {
+                        return $user->loginProviders()
+                            ->where('provider', 'github')
+                            ->pluck('identifier');
+                    })->all();
+
+                    foreach ($sponsors as $sponsor) {
+                        $sponsorData = $sponsor->sponsor ?? $sponsor;
+                        $email = $sponsorData->email ?? null;
+                        $id = $sponsorData->databaseId ?? null;
+
+                        // Check if this sponsor was matched
+                        $wasMatched = false;
+                        if ($email && in_array($email, $matchedEmails)) {
+                            $wasMatched = true;
+                        }
+                        if ($id && in_array($id, $matchedGithubIds)) {
+                            $wasMatched = true;
+                        }
+
+                        if (!$wasMatched) {
+                            $emailDisplay = $email ?: 'no email provided';
+                            $idDisplay = $id ?: 'no ID';
+                            $reason = !$email ? ' (no email to match)' : ' (no matching Flarum user found)';
+                            $this->info("|> GitHub ID: $idDisplay | Email: $emailDisplay{$reason}");
+                        }
+                    }
+                    $this->line('');
+                }
+            }
+
+            // Synchronize group memberships
+            $this->info($dryRun ? 'Calculating group changes...' : 'Applying group changes...');
+
+            $changes = $this->synchronizer->synchronize(
+                $group,
+                $sponsorUsers,
+                $this->matcher->getSponsorEmails($sponsors)->all(),
+                $this->matcher->getSponsorIds($sponsors),
+                $dryRun,
+                $sponsors
+            );
+
+            // Calculate users staying in the group (active sponsors already in group)
+            $usersStaying = $sponsorUsers->filter(function ($user) use ($group) {
+                return $user->groups()->find($group->id) !== null;
+            });
+
+            if ($verbose) {
+                $this->line('');
+                $this->info('Summary:');
+                $this->info("|> Users staying in group: {$usersStaying->count()}");
+                $this->info("|> Users to remove: {$changes['removed']->count()}");
+                $this->info("|> Users to add: {$changes['added']->count()}");
+                $this->line('');
+            }
+
+            if ($verbose && $usersStaying->count() > 0) {
+                $this->info('Users staying in group (active sponsors):');
+                $this->outputUsers($usersStaying, '=');
+            }
+
+            if ($changes['removed']->count() > 0) {
+                if ($verbose) {
+                    $this->info('Removing users from group:');
+                }
+                $this->outputUsers($changes['removed'], '-');
+            }
+
+            if ($changes['added']->count() > 0) {
+                if ($verbose) {
+                    $this->info('Adding users to group:');
+                }
+                $this->outputUsers($changes['added'], '+');
+            }
+
+            if ($changes['removed']->count() === 0 && $changes['added']->count() === 0) {
+                $this->info('No changes needed.');
+            }
+
+            $this->info('Done.');
+        } catch (RequestException $e) {
+            $this->handleApiError($e);
+
+            return 1;
+        } catch (UnexpectedValueException $e) {
+            $this->error($e->getMessage());
+            $this->logger->error('[fof/github-sponsors] Configuration error: '.$e->getMessage());
+
+            return 1;
+        } catch (Throwable $e) {
+            $this->error('An unexpected error occurred: '.$e->getMessage());
+            $this->logger->error('[fof/github-sponsors] Unexpected error: '.$e->getMessage(), [
+                'exception' => $e,
+            ]);
+
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Handle GitHub API errors gracefully.
+     */
+    private function handleApiError(RequestException $e): void
+    {
+        $response = $e->getResponse();
+        $statusCode = $response ? $response->getStatusCode() : null;
+
+        $message = 'GitHub API error';
+
+        if ($statusCode === 401) {
+            $message = 'GitHub API authentication failed. Please check your API token.';
+            $this->error($message);
+            $this->line('');
+            $this->line('To fix this:');
+            $this->line('1. Generate a new Personal Access Token at: https://github.com/settings/tokens');
+            $this->line('2. Ensure the token has the "read:user" and "read:org" scopes');
+            $this->line('3. Update the token in your admin settings');
+        } elseif ($statusCode === 403) {
+            $message = 'GitHub API rate limit exceeded or insufficient permissions.';
+            $this->error($message);
+        } elseif ($statusCode === 404) {
+            $message = 'GitHub user or organization not found.';
+            $this->error($message);
+        } else {
+            $this->error('GitHub API request failed: '.$e->getMessage());
+        }
+
+        $this->logger->error('[fof/github-sponsors] '.$message, [
+            'status_code' => $statusCode,
+            'exception'   => $e->getMessage(),
+        ]);
+    }
+
+    /**
+     * Validate configuration settings.
+     *
+     * @throws UnexpectedValueException
+     */
+    private function validateSettings(?string $apiToken, ?string $accountType, ?string $login, ?string $groupId): void
+    {
         if (!isset($apiToken) || empty($apiToken)) {
             throw new UnexpectedValueException('GitHub API key must be provided');
-        } elseif ($accountType != 'user' && $accountType != 'organization') {
+        }
+
+        if ($accountType != 'user' && $accountType != 'organization') {
             throw new UnexpectedValueException('Account type must be provided');
-        } elseif (empty($login)) {
+        }
+
+        if (empty($login)) {
             throw new UnexpectedValueException('User or organization login must be provided');
-        } elseif (!isset($group)) {
+        }
+
+        $group = isset($groupId) ? Group::find((int) $groupId) : null;
+        if (!isset($group)) {
             throw new UnexpectedValueException("Invalid group ID: '$groupId'");
         }
-
-        $this->info('Retrieving GitHub sponsors...');
-
-        // Retrieve emails from Open Collective GraphQL API
-        $client = new Client();
-        $response = $client->post('https://api.github.com/graphql', [
-            'json' => [
-                'query' => "
-                    query $accountType(\$login: String!) {
-                      $accountType(login: \$login) {
-                        name
-                        sponsorshipsAsMaintainer(first: 100) {
-                          nodes {
-                            sponsor {
-                              databaseId
-                              email
-                            }
-                          }
-                        }
-                      }
-                    }
-                ",
-                'variables' => ['login' => $login],
-            ],
-            'headers' => ['Authorization' => "bearer $apiToken"],
-        ]);
-        $json = json_decode($response->getBody()->getContents());
-
-        if (isset($json->errors)) {
-            throw new Exception(implode("\n", Arr::pluck($json->errors, 'message')));
-        }
-
-        if (!isset($json->data->$accountType)) {
-            throw new Exception("Login '$login' not found");
-        }
-
-        $maintainer = $json->data->$accountType;
-        $sponsors = collect($maintainer->sponsorshipsAsMaintainer->nodes);
-
-        $this->info("|> {$sponsors->count()} sponsors of {$maintainer->name} ($accountType)");
-
-        $sponsorUsersIds = $sponsors->pluck('sponsor.databaseId')->all();
-        $sponsorUsersEmails = $sponsors
-            ->pluck('sponsor.email')
-            ->merge(
-                LoginProvider::query()
-                    ->where('provider', 'github')
-                    ->whereIn('identifier', $sponsorUsersIds)
-                    ->join('users', 'login_providers.user_id', '=', 'users.id')
-                    ->pluck('users.email')
-            )
-            ->filter()
-            ->unique();
-        $sponsorUsers = User::query()->whereIn('email', $sponsorUsersEmails)->get();
-
-        $this->info("|> -> {$sponsorUsers->count()} registered");
-
-        // Remove group from users that have it but shouldn't
-        $usersManaging = collect(json_decode($this->settings->get('fof-github-sponsors.users', '[]')));
-        $usersToRemove = $group->users()
-            ->leftJoin('login_providers', 'login_providers.user_id', '=', 'users.id')
-            ->whereIn('users.id', $usersManaging)
-            ->whereNotIn('users.email', $sponsorUsersEmails)
-            ->whereNotIn('login_providers.identifier', $sponsorUsersIds)
-            ->get();
-
-        $this->info('Applying group changes...');
-
-        $group->users()->detach($usersToRemove->map->id);
-
-        foreach ($usersToRemove as $user) {
-            $usersManaging = $usersManaging->reject($user->id);
-        }
-
-        $this->updateUsersManaging($usersManaging);
-        $this->outputUsers($usersToRemove, '-');
-
-        if ($sponsorUsers->isEmpty()) {
-            $this->info('Done.');
-
-            return;
-        }
-
-        // Add group to users that should have it
-        if ($sponsorUsers->isNotEmpty()) {
-            $sponsorUsers->each(function ($user) use ($usersManaging, $group) {
-                if (!$user->groups()->find($group->id)) {
-                    $this->outputUser($user, '+');
-                    $user->groups()->attach($group->id);
-                    $usersManaging->push($user->id);
-                }
-            });
-        }
-
-        $this->updateUsersManaging($usersManaging);
-
-        $this->info('Done.');
     }
 
     protected function outputUsers($users, $prefix)
@@ -189,8 +352,17 @@ class UpdateCommand extends Command
         parent::info($this->prefix.' | '.$string, $verbosity);
     }
 
-    protected function updateUsersManaging(Collection $users)
+    public function error($string, $verbosity = null)
     {
-        $this->settings->set('fof-github-sponsors.users', $users->values()->unique()->toJson());
+        parent::error($this->prefix.' | '.$string, $verbosity);
+    }
+
+    public function line($string, $style = null, $verbosity = null)
+    {
+        if ($string !== '') {
+            parent::line($this->prefix.' | '.$string, $style, $verbosity);
+        } else {
+            parent::line($string, $style, $verbosity);
+        }
     }
 }
