@@ -76,7 +76,7 @@ class GitHubSponsorsClient
 
         return [
             'maintainer' => $maintainer->name,
-            'sponsors'   => collect($maintainer->sponsorshipsAsMaintainer->nodes)->all(),
+            'sponsors'   => collect((array) $maintainer->sponsorshipsAsMaintainer->nodes)->all(),
         ];
     }
 }

@@ -25,11 +25,11 @@ return [
 
     (new Extend\Console())
         ->command(UpdateCommand::class)
-    ->schedule(UpdateCommand::class, function (Event $event) {
-        $paths = resolve(Paths::class);
+        ->schedule(UpdateCommand::class, function (Event $event) {
+            $paths = resolve(Paths::class);
 
-        $event->hourly()
-            ->withoutOverlapping()
-            ->appendOutputTo($paths->storage.'/logs/fof-github-sponsors.log');
-    }),
+            $event->hourly()
+                ->withoutOverlapping()
+                ->appendOutputTo($paths->storage.'/logs/fof-github-sponsors.log');
+        }),
 ];

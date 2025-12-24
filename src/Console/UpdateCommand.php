@@ -36,51 +36,20 @@ class UpdateCommand extends Command
      */
     protected $description = 'Update groups of GitHub sponsors.';
 
-    protected $prefix;
-
-    /**
-     * @var SettingsRepositoryInterface
-     */
-    private $settings;
-
-    /**
-     * @var GitHubSponsorsClient
-     */
-    private $client;
-
-    /**
-     * @var SponsorMatcher
-     */
-    private $matcher;
-
-    /**
-     * @var GroupSynchronizer
-     */
-    private $synchronizer;
-
-    /**
-     * @var LoggerInterface
-     */
-    private $logger;
+    protected string $prefix;
 
     public function __construct(
-        SettingsRepositoryInterface $settings,
-        GitHubSponsorsClient $client,
-        SponsorMatcher $matcher,
-        GroupSynchronizer $synchronizer,
-        LoggerInterface $logger
+        private SettingsRepositoryInterface $settings,
+        private GitHubSponsorsClient $client,
+        private SponsorMatcher $matcher,
+        private GroupSynchronizer $synchronizer,
+        private LoggerInterface $logger
     ) {
         parent::__construct();
-
-        $this->settings = $settings;
-        $this->client = $client;
-        $this->matcher = $matcher;
-        $this->synchronizer = $synchronizer;
-        $this->logger = $logger;
         $this->prefix = Carbon::now()->format('M d, Y @ h:m A');
     }
 
-    public function handle()
+    public function handle(): int
     {
         $this->line('');
 
@@ -174,6 +143,7 @@ class UpdateCommand extends Command
                 if ($unregisteredCount > 0) {
                     $this->info('Unmatched sponsors (not registered on Flarum):');
                     $matchedEmails = $sponsorUsers->pluck('email')->all();
+                    /** @phpstan-ignore-next-line */
                     $matchedGithubIds = $sponsorUsers->flatMap(function ($user) {
                         return $user->loginProviders()
                             ->where('provider', 'github')
@@ -335,14 +305,14 @@ class UpdateCommand extends Command
         }
     }
 
-    protected function outputUsers($users, $prefix)
+    protected function outputUsers(iterable $users, string $prefix): void
     {
         foreach ($users as $user) {
             $this->outputUser($user, $prefix);
         }
     }
 
-    protected function outputUser($user, $prefix)
+    protected function outputUser(object $user, string $prefix): void
     {
         $this->info("|> $prefix #{$user->id} {$user->username}");
     }
