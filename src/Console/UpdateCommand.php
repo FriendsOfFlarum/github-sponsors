@@ -36,7 +36,7 @@ class UpdateCommand extends Command
      */
     protected $description = 'Update groups of GitHub sponsors.';
 
-    protected $prefix;
+    protected string $prefix;
 
     public function __construct(
         private SettingsRepositoryInterface $settings,
@@ -49,7 +49,7 @@ class UpdateCommand extends Command
         $this->prefix = Carbon::now()->format('M d, Y @ h:m A');
     }
 
-    public function handle()
+    public function handle(): int
     {
         $this->line('');
 
@@ -143,6 +143,7 @@ class UpdateCommand extends Command
                 if ($unregisteredCount > 0) {
                     $this->info('Unmatched sponsors (not registered on Flarum):');
                     $matchedEmails = $sponsorUsers->pluck('email')->all();
+                    /** @phpstan-ignore-next-line */
                     $matchedGithubIds = $sponsorUsers->flatMap(function ($user) {
                         return $user->loginProviders()
                             ->where('provider', 'github')
@@ -304,14 +305,14 @@ class UpdateCommand extends Command
         }
     }
 
-    protected function outputUsers($users, $prefix)
+    protected function outputUsers(iterable $users, string $prefix): void
     {
         foreach ($users as $user) {
             $this->outputUser($user, $prefix);
         }
     }
 
-    protected function outputUser($user, $prefix)
+    protected function outputUser(object $user, string $prefix): void
     {
         $this->info("|> $prefix #{$user->id} {$user->username}");
     }

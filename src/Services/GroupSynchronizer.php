@@ -211,7 +211,7 @@ class GroupSynchronizer
      */
     public function getManagedUsers(): Collection
     {
-        return collect(json_decode($this->settings->get(self::MANAGED_USERS_KEY, '[]')));
+        return collect((array) json_decode($this->settings->get(self::MANAGED_USERS_KEY, '[]')));
     }
 
     /**
