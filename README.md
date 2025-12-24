@@ -47,7 +47,8 @@ After installation, configure the extension in your Flarum admin panel:
 2. Click "Generate new token (classic)"
 3. Give it a descriptive name (e.g., "Flarum Sponsors Sync")
 4. Select the following scopes:
-   - `user` - Read user profile data
+   - `read:user` - Read user profile data
+   - `user:email` - Read the user email address
    - `read:org` - Read organization membership (if syncing an organization)
 5. Click "Generate token" and copy it
 
@@ -70,6 +71,39 @@ Once configured, the extension runs automatically every hour. You can also manua
 php flarum fof:github-sponsors:update
 ```
 
+### Command Options
+
+#### Dry-Run Mode
+
+Preview what changes would be made without actually applying them:
+
+```bash
+php flarum fof:github-sponsors:update --dry-run
+```
+
+This is useful for testing your configuration before letting the extension make real changes to your groups.
+
+#### Verbose Output
+
+Get detailed information about the synchronization process:
+
+```bash
+php flarum fof:github-sponsors:update -v
+```
+
+Verbose mode shows:
+- Configuration details (account type, login, target group)
+- All sponsors from GitHub with their IDs and emails
+- Matched Flarum users with match method (email or GitHub OAuth)
+- Unmatched sponsors who couldn't be linked to Flarum accounts
+- Summary of users staying, being added, and being removed
+
+Combine both options for detailed preview:
+
+```bash
+php flarum fof:github-sponsors:update --dry-run -v
+```
+
 ### Viewing Logs
 
 Check the synchronization logs:
@@ -83,6 +117,7 @@ Log output includes:
 - Number of sponsors matched to Flarum users
 - Users added to the group (with `+ #userID username`)
 - Users removed from the group (with `- #userID username`)
+- Any API errors or configuration issues
 
 ## How User Matching Works
 
@@ -98,6 +133,73 @@ This dual approach maximizes the chance of correctly identifying your sponsors.
 - The extension only removes the group from users it previously added. It won't affect users who were manually added to the group.
 - Users must have either the same email address as their GitHub account OR have logged into Flarum via GitHub OAuth at least once.
 - The GitHub API has rate limits. The extension checks once per hour to stay well within these limits.
+
+## For Developers: Event System
+
+This extension dispatches events when sponsors are added or removed, allowing other extensions to react to these changes.
+
+### Available Events
+
+#### `FoF\GitHubSponsors\Event\SponsorAdded`
+
+Dispatched when a user is added to the sponsors group.
+
+**Properties:**
+- `$user` (Flarum\User\User) - The Flarum user who was added
+- `$sponsorData` (object|null) - GitHub sponsor data including:
+  - `email` - Sponsor's email address
+  - `databaseId` - GitHub user ID
+  - `login` - GitHub username
+  - Other fields from the GitHub API
+
+**Example listener:**
+
+```php
+use Flarum\Extend;
+use FoF\GitHubSponsors\Event\SponsorAdded;
+
+return [
+    (new Extend\Event)
+        ->listen(SponsorAdded::class, function (SponsorAdded $event) {
+            $user = $event->user;
+            $githubId = $event->sponsorData->databaseId ?? null;
+
+            // Your custom logic here
+            // e.g., send a welcome email, grant additional permissions, etc.
+        }),
+];
+```
+
+#### `FoF\GitHubSponsors\Event\SponsorRemoved`
+
+Dispatched when a user is removed from the sponsors group (sponsorship ended).
+
+**Properties:**
+- `$user` (Flarum\User\User) - The Flarum user who was removed
+
+**Example listener:**
+
+```php
+use Flarum\Extend;
+use FoF\GitHubSponsors\Event\SponsorRemoved;
+
+return [
+    (new Extend\Event)
+        ->listen(SponsorRemoved::class, function (SponsorRemoved $event) {
+            $user = $event->user;
+
+            // Your custom logic here
+            // e.g., send a thank you message, revoke special access, etc.
+        }),
+];
+```
+
+### Notes on Events
+
+- Events are **not dispatched** when running with the `--dry-run` flag
+- Events fire after the database changes have been made
+- The `SponsorAdded` event includes raw GitHub data for additional context
+- These events only fire for automated changes, not manual group assignments
 
 ## Troubleshooting
 
