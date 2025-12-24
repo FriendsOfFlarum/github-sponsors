@@ -29,10 +29,10 @@ class GroupSynchronizer
     /**
      * Synchronize group memberships for sponsors.
      *
-     * @param Group $group The group to synchronize
-     * @param Collection<User> $sponsorUsers Users who are sponsors
-     * @param array<string> $sponsorEmails Sponsor email addresses
-     * @param array<int> $sponsorIds Sponsor GitHub database IDs
+     * @param Group            $group         The group to synchronize
+     * @param Collection<User> $sponsorUsers  Users who are sponsors
+     * @param array<string>    $sponsorEmails Sponsor email addresses
+     * @param array<int>       $sponsorIds    Sponsor GitHub database IDs
      *
      * @return array{added: Collection<User>, removed: Collection<User>}
      */
@@ -61,7 +61,7 @@ class GroupSynchronizer
         $this->updateManagedUsers($usersManaging);
 
         return [
-            'added' => $usersToAdd,
+            'added'   => $usersToAdd,
             'removed' => $usersToRemove,
         ];
     }
@@ -69,10 +69,10 @@ class GroupSynchronizer
     /**
      * Get users who should be removed from the group.
      *
-     * @param Group $group
-     * @param Collection $usersManaging
+     * @param Group         $group
+     * @param Collection    $usersManaging
      * @param array<string> $sponsorEmails
-     * @param array<int> $sponsorIds
+     * @param array<int>    $sponsorIds
      *
      * @return Collection<User>
      */
@@ -93,7 +93,7 @@ class GroupSynchronizer
     /**
      * Remove users from the group.
      *
-     * @param Group $group
+     * @param Group            $group
      * @param Collection<User> $users
      */
     private function removeUsersFromGroup(Group $group, Collection $users): void
@@ -104,9 +104,9 @@ class GroupSynchronizer
     /**
      * Add users to the group if they don't already have it.
      *
-     * @param Group $group
+     * @param Group            $group
      * @param Collection<User> $sponsorUsers
-     * @param Collection $usersManaging
+     * @param Collection       $usersManaging
      *
      * @return Collection<User> Users that were added
      */

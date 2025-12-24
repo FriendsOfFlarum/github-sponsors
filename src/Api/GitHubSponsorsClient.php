@@ -27,13 +27,13 @@ class GitHubSponsorsClient
     /**
      * Fetch sponsors from GitHub GraphQL API.
      *
-     * @param string $apiToken GitHub personal access token
+     * @param string $apiToken    GitHub personal access token
      * @param string $accountType Either 'user' or 'organization'
-     * @param string $login GitHub username or organization name
-     *
-     * @return array{maintainer: string, sponsors: array}
+     * @param string $login       GitHub username or organization name
      *
      * @throws Exception
+     *
+     * @return array{maintainer: string, sponsors: array}
      */
     public function fetchSponsors(string $apiToken, string $accountType, string $login): array
     {
@@ -73,7 +73,7 @@ class GitHubSponsorsClient
 
         return [
             'maintainer' => $maintainer->name,
-            'sponsors' => collect($maintainer->sponsorshipsAsMaintainer->nodes)->all(),
+            'sponsors'   => collect($maintainer->sponsorshipsAsMaintainer->nodes)->all(),
         ];
     }
 }

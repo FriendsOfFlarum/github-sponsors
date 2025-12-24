@@ -25,13 +25,13 @@ class GitHubSponsorsClientTest extends TestCase
         $mockResponse = json_encode([
             'data' => [
                 'user' => [
-                    'name' => 'Test User',
+                    'name'                     => 'Test User',
                     'sponsorshipsAsMaintainer' => [
                         'nodes' => [
                             [
                                 'sponsor' => [
                                     'databaseId' => 12345,
-                                    'email' => 'sponsor@example.com',
+                                    'email'      => 'sponsor@example.com',
                                 ],
                             ],
                         ],

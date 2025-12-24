@@ -75,7 +75,7 @@ class UpdateCommand extends Command
         $sponsors = $result['sponsors'];
         $maintainerName = $result['maintainer'];
 
-        $this->info("|> ".count($sponsors)." sponsors of {$maintainerName} ($accountType)");
+        $this->info('|> '.count($sponsors)." sponsors of {$maintainerName} ($accountType)");
 
         // Match sponsors to Flarum users
         $sponsorUsers = $this->matcher->matchSponsorsToUsers($sponsors);
