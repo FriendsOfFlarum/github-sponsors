@@ -1,3 +1,4 @@
+import Form from 'flarum/common/components/Form';
 import app from 'flarum/admin/app';
 import ExtensionPage from 'flarum/admin/components/ExtensionPage';
 import Link from 'flarum/common/components/Link';
@@ -21,16 +22,16 @@ export default class ExtensionSettingsPage extends ExtensionPage {
     return (
       <div className="container">
         <div className="GithubSponsorsSettings">
-          <div className="Form">
+          <Form>
             {this.buildSettingComponent({
               type: 'password',
               setting: 'fof-github-sponsors.api_token',
               label: app.translator.trans('fof-github-sponsors.admin.settings.api_token_label'),
+
               help: app.translator.trans('fof-github-sponsors.admin.settings.api_token_help', {
                 a: <Link href="https://github.com/settings/tokens/new" target="_blank" />,
               }),
             })}
-
             {this.buildSettingComponent({
               type: 'select',
               setting: 'fof-github-sponsors.account_type',
@@ -39,7 +40,6 @@ export default class ExtensionSettingsPage extends ExtensionPage {
               options: this.getOptions(),
               required: true,
             })}
-
             {this.buildSettingComponent({
               type: 'string',
               setting: 'fof-github-sponsors.login',
@@ -47,12 +47,12 @@ export default class ExtensionSettingsPage extends ExtensionPage {
               help: app.translator.trans('fof-github-sponsors.admin.settings.login_help'),
               required: true,
             })}
-
             {this.buildSettingComponent({
               type: 'select',
               setting: 'fof-github-sponsors.group_id',
               label: app.translator.trans('fof-github-sponsors.admin.settings.group_label'),
               help: app.translator.trans('fof-github-sponsors.admin.settings.group_help'),
+
               options: app.store.all<Group>('groups').reduce<Record<string, any>>((o, g) => {
                 const id = g.id();
                 if (id) {
@@ -61,10 +61,11 @@ export default class ExtensionSettingsPage extends ExtensionPage {
 
                 return o;
               }, {}),
+
               required: true,
             })}
             {this.submitButton()}
-          </div>
+          </Form>
         </div>
       </div>
     );
