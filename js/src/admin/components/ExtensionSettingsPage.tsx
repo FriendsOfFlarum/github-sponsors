@@ -26,8 +26,8 @@ export default class ExtensionSettingsPage extends ExtensionPage {
               type: 'password',
               setting: 'fof-github-sponsors.api_token',
               label: app.translator.trans('fof-github-sponsors.admin.settings.api_token_label'),
-              help: app.translator.trans('fof-github-sponsors.admin.settings.desc', {
-                a: <Link href="https://github.com/settings/tokens" target="_blank" />,
+              help: app.translator.trans('fof-github-sponsors.admin.settings.api_token_help', {
+                a: <Link href="https://github.com/settings/tokens/new" target="_blank" />,
               }),
             })}
 
@@ -35,6 +35,7 @@ export default class ExtensionSettingsPage extends ExtensionPage {
               type: 'select',
               setting: 'fof-github-sponsors.account_type',
               label: app.translator.trans('fof-github-sponsors.admin.settings.account_type_label'),
+              help: app.translator.trans('fof-github-sponsors.admin.settings.account_type_help'),
               options: this.getOptions(),
               required: true,
             })}
@@ -43,6 +44,7 @@ export default class ExtensionSettingsPage extends ExtensionPage {
               type: 'string',
               setting: 'fof-github-sponsors.login',
               label: app.translator.trans('fof-github-sponsors.admin.settings.login_label'),
+              help: app.translator.trans('fof-github-sponsors.admin.settings.login_help'),
               required: true,
             })}
 
@@ -50,6 +52,7 @@ export default class ExtensionSettingsPage extends ExtensionPage {
               type: 'select',
               setting: 'fof-github-sponsors.group_id',
               label: app.translator.trans('fof-github-sponsors.admin.settings.group_label'),
+              help: app.translator.trans('fof-github-sponsors.admin.settings.group_help'),
               options: app.store.all<Group>('groups').reduce<Record<string, any>>((o, g) => {
                 const id = g.id();
                 if (id) {
