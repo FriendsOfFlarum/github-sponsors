@@ -145,7 +145,10 @@ class SponsorSynchronizer
             $othersWantOnetime = in_array($uid, $othersWant[$onetimeId] ?? [], true);
 
             if ($inRecurringAfter) {
-                if (isset($groups[$onetimeId])) {
+                // Left alone while another source still claims it: that source sees the
+                // monthly membership and drops it itself, and removing it here could
+                // fight a source that maps these groups the other way round.
+                if (isset($groups[$onetimeId]) && !$othersWantOnetime) {
                     $remove[] = $onetimeId;
                 }
             } elseif ($othersWantRecurring) {
