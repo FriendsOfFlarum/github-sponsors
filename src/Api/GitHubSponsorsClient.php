@@ -11,72 +11,162 @@
 
 namespace FoF\GitHubSponsors\Api;
 
-use Exception;
 use GuzzleHttp\Client;
-use Illuminate\Support\Arr;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
+use InvalidArgumentException;
 
 class GitHubSponsorsClient
 {
-    /**
-     * @var Client
-     */
-    private $client;
+    protected const ENDPOINT = 'https://api.github.com/graphql';
+
+    /** GitHub's maximum page size for connections. */
+    protected const PAGE_SIZE = 100;
+
+    public const ACCOUNT_TYPES = ['user', 'organization'];
+
+    protected Client $client;
 
     public function __construct(?Client $client = null)
     {
-        $this->client = $client ?? new Client();
+        // Without a timeout a hung request blocks forever, and the scheduler's
+        // withoutOverlapping() lock then stops every later run for 24 hours.
+        $this->client = $client ?? new Client(['timeout' => 30, 'connect_timeout' => 10]);
     }
 
     /**
-     * Fetch sponsors from GitHub GraphQL API.
+     * Fetch every active sponsor of a user or organization.
      *
-     * @param string $apiToken    GitHub personal access token
-     * @param string $accountType Either 'user' or 'organization'
-     * @param string $login       GitHub username or organization name
+     * Private sponsorships are left out on purpose: the sponsor chose not to be
+     * shown, and a public forum group would reveal them.
      *
-     * @throws Exception
+     * @param string $accountType 'user' or 'organization'
      *
-     * @return array{maintainer: string, sponsors: array}
+     * @throws GitHubSponsorsException
+     *
+     * @return array{maintainer: string, sponsors: array<object>} Each sponsor is a Sponsorship node with a `sponsorEntity`
      */
     public function fetchSponsors(string $apiToken, string $accountType, string $login): array
     {
-        $response = $this->client->post('https://api.github.com/graphql', [
-            'json' => [
-                'query' => "
-                    query $accountType(\$login: String!) {
-                      $accountType(login: \$login) {
-                        name
-                        sponsorshipsAsMaintainer(first: 100) {
-                          nodes {
-                            sponsor {
-                              databaseId
-                              email
-                            }
+        if (!in_array($accountType, self::ACCOUNT_TYPES, true)) {
+            // It is interpolated into the query as a field name, so it must be one of the two.
+            throw new InvalidArgumentException("Unknown account type '$accountType'");
+        }
+
+        $sponsors = [];
+        $cursor = null;
+        $maintainer = null;
+
+        do {
+            $data = $this->query($apiToken, "
+                query sponsors(\$login: String!, \$first: Int!, \$after: String) {
+                  $accountType(login: \$login) {
+                    name
+                    login
+                    sponsorshipsAsMaintainer(first: \$first, after: \$after, activeOnly: true, includePrivate: false) {
+                      pageInfo {
+                        hasNextPage
+                        endCursor
+                      }
+                      nodes {
+                        isOneTimePayment
+                        sponsorEntity {
+                          __typename
+                          ... on User {
+                            databaseId
+                            login
+                            email
+                          }
+                          ... on Organization {
+                            databaseId
+                            login
+                            email
                           }
                         }
                       }
                     }
-                ",
-                'variables' => ['login' => $login],
-            ],
-            'headers' => ['Authorization' => "bearer $apiToken"],
-        ]);
+                  }
+                }
+            ", ['login' => $login, 'first' => self::PAGE_SIZE, 'after' => $cursor]);
 
-        $json = json_decode($response->getBody()->getContents());
+            $maintainer = $data->$accountType ?? null;
 
-        if (isset($json->errors)) {
-            throw new Exception(implode("\n", Arr::pluck($json->errors, 'message')));
-        }
+            if (!$maintainer) {
+                throw new GitHubSponsorsException(GitHubSponsorsException::NOT_FOUND, "GitHub $accountType '$login' not found");
+            }
 
-        if (!isset($json->data->$accountType)) {
-            throw new Exception("Login '$login' not found");
-        }
+            $connection = $maintainer->sponsorshipsAsMaintainer ?? null;
 
-        $maintainer = $json->data->$accountType;
+            if (!isset($connection->nodes, $connection->pageInfo)) {
+                throw new GitHubSponsorsException(GitHubSponsorsException::INVALID_RESPONSE, 'GitHub returned no sponsorships data');
+            }
+
+            array_push($sponsors, ...array_filter((array) $connection->nodes, fn ($node) => isset($node->sponsorEntity)));
+            $cursor = $connection->pageInfo->endCursor ?? null;
+        } while (($connection->pageInfo->hasNextPage ?? false) && $cursor);
 
         return [
-            'maintainer' => $maintainer->name,
-            'sponsors'   => collect((array) $maintainer->sponsorshipsAsMaintainer->nodes)->all(),
+            'maintainer' => $maintainer->name ?: $maintainer->login,
+            'sponsors'   => $sponsors,
         ];
+    }
+
+    /**
+     * Run a GraphQL query and return its `data`, turning every failure mode into
+     * a {@see GitHubSponsorsException}.
+     *
+     * @param array<string, mixed> $variables
+     *
+     * @throws GitHubSponsorsException
+     */
+    protected function query(string $apiToken, string $query, array $variables): object
+    {
+        try {
+            $response = $this->client->post(self::ENDPOINT, [
+                'json'    => ['query' => $query, 'variables' => $variables],
+                'headers' => ['Authorization' => "bearer $apiToken"],
+            ]);
+        } catch (ConnectException $e) {
+            throw new GitHubSponsorsException(GitHubSponsorsException::NETWORK, 'Could not reach GitHub: '.$e->getMessage(), $e);
+        } catch (RequestException $e) {
+            $response = $e->getResponse();
+            $status = $response?->getStatusCode();
+            $kind = match (true) {
+                $status === 401                                                    => GitHubSponsorsException::UNAUTHORIZED,
+                $status === 429, $response?->getHeaderLine('X-RateLimit-Remaining') === '0' => GitHubSponsorsException::RATE_LIMITED,
+                $status === 403                                                    => GitHubSponsorsException::FORBIDDEN,
+                default                                                            => GitHubSponsorsException::API_ERROR,
+            };
+            $body = json_decode((string) $response?->getBody());
+
+            throw new GitHubSponsorsException($kind, $body->message ?? "GitHub request failed (HTTP $status)", $e);
+        } catch (GuzzleException $e) {
+            throw new GitHubSponsorsException(GitHubSponsorsException::NETWORK, 'GitHub request failed: '.$e->getMessage(), $e);
+        }
+
+        $json = json_decode((string) $response->getBody());
+
+        if (!is_object($json)) {
+            throw new GitHubSponsorsException(GitHubSponsorsException::INVALID_RESPONSE, 'GitHub returned a response that is not JSON');
+        }
+
+        if (!empty($json->errors)) {
+            $types = array_map(fn ($error) => $error->type ?? null, $json->errors);
+            $kind = match (true) {
+                in_array('INSUFFICIENT_SCOPES', $types, true), in_array('FORBIDDEN', $types, true) => GitHubSponsorsException::FORBIDDEN,
+                in_array('NOT_FOUND', $types, true)                                                => GitHubSponsorsException::NOT_FOUND,
+                in_array('RATE_LIMITED', $types, true)                                             => GitHubSponsorsException::RATE_LIMITED,
+                default                                                                            => GitHubSponsorsException::API_ERROR,
+            };
+
+            throw new GitHubSponsorsException($kind, implode("\n", array_map(fn ($error) => $error->message ?? 'Unknown error', $json->errors)));
+        }
+
+        if (!isset($json->data) || !is_object($json->data)) {
+            throw new GitHubSponsorsException(GitHubSponsorsException::INVALID_RESPONSE, 'GitHub returned no data');
+        }
+
+        return $json->data;
     }
 }

@@ -11,94 +11,162 @@
 
 namespace FoF\GitHubSponsors\Tests\Unit\Api;
 
-use Exception;
 use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
+use FoF\GitHubSponsors\Api\GitHubSponsorsException;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * Runs the client against a real Guzzle client with queued responses, so HTTP
+ * error handling behaves as in production.
+ */
 class GitHubSponsorsClientTest extends TestCase
 {
-    public function testFetchSponsorsSuccess()
+    /** @var array<int, array{request: Request}> */
+    protected array $history = [];
+
+    protected function client(array $responses): GitHubSponsorsClient
     {
-        // Mock response data
-        $mockResponse = json_encode([
-            'data' => [
-                'user' => [
-                    'name'                     => 'Test User',
-                    'sponsorshipsAsMaintainer' => [
-                        'nodes' => [
-                            [
-                                'sponsor' => [
-                                    'databaseId' => 12345,
-                                    'email'      => 'sponsor@example.com',
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]);
+        $this->history = [];
+        $stack = HandlerStack::create(new MockHandler($responses));
+        $stack->push(Middleware::history($this->history));
 
-        // Mock Guzzle client
-        $mockClient = $this->createMock(Client::class);
-        $mockClient->expects($this->once())
-            ->method('post')
-            ->with(
-                'https://api.github.com/graphql',
-                $this->callback(function ($options) {
-                    return isset($options['json']['query']) &&
-                           isset($options['json']['variables']) &&
-                           isset($options['headers']['Authorization']);
-                })
-            )
-            ->willReturn(new Response(200, [], $mockResponse));
-
-        // Test
-        $client = new GitHubSponsorsClient($mockClient);
-        $result = $client->fetchSponsors('test-token', 'user', 'testuser');
-
-        $this->assertEquals('Test User', $result['maintainer']);
-        $this->assertCount(1, $result['sponsors']);
-        $this->assertEquals(12345, $result['sponsors'][0]->sponsor->databaseId);
-        $this->assertEquals('sponsor@example.com', $result['sponsors'][0]->sponsor->email);
+        return new GitHubSponsorsClient(new Client(['handler' => $stack]));
     }
 
-    public function testFetchSponsorsThrowsExceptionOnGraphQLError()
+    protected function json(array $body, int $status = 200, array $headers = []): Response
     {
-        $mockResponse = json_encode([
-            'errors' => [
-                ['message' => 'Invalid token'],
-            ],
-        ]);
-
-        $mockClient = $this->createMock(Client::class);
-        $mockClient->method('post')
-            ->willReturn(new Response(200, [], $mockResponse));
-
-        $client = new GitHubSponsorsClient($mockClient);
-
-        $this->expectException(Exception::class);
-        $this->expectExceptionMessage('Invalid token');
-
-        $client->fetchSponsors('invalid-token', 'user', 'testuser');
+        return new Response($status, ['Content-Type' => 'application/json'] + $headers, json_encode($body));
     }
 
-    public function testFetchSponsorsThrowsExceptionOnInvalidLogin()
+    protected function sponsor(int $id, string $login, ?string $email = null, string $type = 'User'): array
     {
-        $mockResponse = json_encode([
-            'data' => [],
-        ]);
+        return ['isOneTimePayment' => false, 'sponsorEntity' => ['__typename' => $type, 'databaseId' => $id, 'login' => $login, 'email' => $email]];
+    }
 
-        $mockClient = $this->createMock(Client::class);
-        $mockClient->method('post')
-            ->willReturn(new Response(200, [], $mockResponse));
+    protected function page(array $nodes, ?string $endCursor = null, bool $hasNextPage = false, string $accountType = 'organization'): Response
+    {
+        return $this->json(['data' => [$accountType => [
+            'name'                     => 'Flarum',
+            'login'                    => 'flarum',
+            'sponsorshipsAsMaintainer' => ['pageInfo' => ['hasNextPage' => $hasNextPage, 'endCursor' => $endCursor], 'nodes' => $nodes],
+        ]]]);
+    }
 
-        $client = new GitHubSponsorsClient($mockClient);
+    /** @return array<int, array<string, mixed>> */
+    protected function sentBodies(): array
+    {
+        return array_map(fn ($entry) => json_decode((string) $entry['request']->getBody(), true), $this->history);
+    }
 
-        $this->expectException(Exception::class);
-        $this->expectExceptionMessage("Login 'nonexistent' not found");
+    #[Test]
+    public function it_returns_users_and_organizations_with_the_maintainer_name(): void
+    {
+        $result = $this->client([$this->page([$this->sponsor(1, 'alice', 'alice@example.com'), $this->sponsor(2, 'acme', null, 'Organization')])])
+            ->fetchSponsors('token', 'organization', 'flarum');
 
-        $client->fetchSponsors('test-token', 'user', 'nonexistent');
+        $this->assertSame('Flarum', $result['maintainer']);
+        $this->assertSame(['alice', 'acme'], array_map(fn ($s) => $s->sponsorEntity->login, $result['sponsors']));
+        $this->assertSame('bearer token', $this->history[0]['request']->getHeaderLine('Authorization'));
+    }
+
+    #[Test]
+    public function it_follows_every_page(): void
+    {
+        $result = $this->client([
+            $this->page([$this->sponsor(1, 'alice')], 'cursor-1', true),
+            $this->page([$this->sponsor(2, 'bob')]),
+        ])->fetchSponsors('token', 'organization', 'flarum');
+
+        $this->assertCount(2, $result['sponsors']);
+        $this->assertNull($this->sentBodies()[0]['variables']['after']);
+        $this->assertSame('cursor-1', $this->sentBodies()[1]['variables']['after']);
+    }
+
+    #[Test]
+    public function private_sponsorships_are_not_requested(): void
+    {
+        $this->client([$this->page([], null, false, 'user')])->fetchSponsors('token', 'user', 'someone');
+
+        $this->assertStringContainsString('includePrivate: false', $this->sentBodies()[0]['query']);
+        $this->assertStringContainsString('user(login:', $this->sentBodies()[0]['query']);
+    }
+
+    #[Test]
+    public function an_unknown_account_type_never_reaches_the_query(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->client([])->fetchSponsors('token', 'repository { id } organization', 'flarum');
+    }
+
+    protected function assertFailsWith(string $kind, array $responses, ?string $message = null): void
+    {
+        try {
+            $this->client($responses)->fetchSponsors('token', 'organization', 'flarum');
+            $this->fail("Expected a GitHubSponsorsException of kind $kind");
+        } catch (GitHubSponsorsException $e) {
+            $this->assertSame($kind, $e->kind);
+
+            if ($message !== null) {
+                $this->assertStringContainsString($message, $e->getMessage());
+            }
+        }
+    }
+
+    #[Test]
+    public function a_rejected_token_is_unauthorized(): void
+    {
+        $this->assertFailsWith(GitHubSponsorsException::UNAUTHORIZED, [$this->json(['message' => 'Bad credentials'], 401)], 'Bad credentials');
+    }
+
+    #[Test]
+    public function an_unknown_login_is_not_found(): void
+    {
+        // The shape GitHub returns: HTTP 200, a NOT_FOUND error, null data for the account.
+        $this->assertFailsWith(GitHubSponsorsException::NOT_FOUND, [$this->json([
+            'data'   => ['organization' => null],
+            'errors' => [['type' => 'NOT_FOUND', 'path' => ['organization'], 'message' => "Could not resolve to an Organization with the login of 'flarum'."]],
+        ])]);
+    }
+
+    #[Test]
+    public function missing_scopes_are_forbidden(): void
+    {
+        $this->assertFailsWith(GitHubSponsorsException::FORBIDDEN, [$this->json([
+            'errors' => [['type' => 'INSUFFICIENT_SCOPES', 'message' => "Your token has not been granted the required scopes to execute this query. The 'email' field requires one of the following scopes: ['user:email', 'read:user']"]],
+        ])], 'required scopes');
+    }
+
+    #[Test]
+    public function an_exhausted_rate_limit_is_reported_as_such(): void
+    {
+        $this->assertFailsWith(GitHubSponsorsException::RATE_LIMITED, [$this->json(['message' => 'API rate limit exceeded'], 403, ['X-RateLimit-Remaining' => '0'])]);
+    }
+
+    #[Test]
+    public function an_unreachable_api_is_a_network_failure(): void
+    {
+        $this->assertFailsWith(GitHubSponsorsException::NETWORK, [new ConnectException('Connection timed out', new Request('POST', 'https://api.github.com/graphql'))]);
+    }
+
+    #[Test]
+    public function a_body_that_is_not_json_is_an_invalid_response(): void
+    {
+        $this->assertFailsWith(GitHubSponsorsException::INVALID_RESPONSE, [new Response(200, [], '<html>Unicorn!</html>')]);
+    }
+
+    #[Test]
+    public function missing_sponsorship_data_is_an_invalid_response_rather_than_no_sponsors(): void
+    {
+        $this->assertFailsWith(GitHubSponsorsException::INVALID_RESPONSE, [$this->json(['data' => ['organization' => ['name' => 'Flarum', 'login' => 'flarum', 'sponsorshipsAsMaintainer' => null]]])]);
     }
 }
