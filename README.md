@@ -187,7 +187,7 @@ return [
 
 - Events fire after the database changes have been made, and never in `--dry-run` mode.
 - The first sync after installing or upgrading records statuses without status events, so existing sponsors are not announced as new. Group repairs on that run still fire `SponsorGroupsChanged`.
-- Group memberships are only removed where the extension added them. Members an admin added by hand still get status events but keep their groups.
+- Group memberships are only removed where the extension owns them (it added or adopted them) and no other supporter source still wants them. A hand-added member is adopted once their sponsorship justifies the group.
 
 ### Sharing groups with other supporter sources
 
