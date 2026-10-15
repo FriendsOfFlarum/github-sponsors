@@ -16,6 +16,7 @@ use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 
 /**
@@ -27,9 +28,28 @@ class FakeGitHubProvider extends AbstractServiceProvider
     /** @var array<Response|\Throwable> */
     public static array $responses = [];
 
+    /** @var array<int, array{request: \Psr\Http\Message\RequestInterface}> */
+    public static array $history = [];
+
     public static function reset(array $responses = []): void
     {
         self::$responses = $responses;
+        self::$history = [];
+    }
+
+    /**
+     * Queue a successful connection test.
+     */
+    public static function connection(int $sponsorships = 52, array $emails = ['sponsor@example.com']): void
+    {
+        self::reset([new Response(200, ['Content-Type' => 'application/json'], json_encode(['data' => [
+            'viewer'       => ['login' => 'admin-account'],
+            'organization' => [
+                'name'                     => 'Flarum',
+                'login'                    => 'flarum',
+                'sponsorshipsAsMaintainer' => ['totalCount' => $sponsorships, 'nodes' => array_map(fn ($email) => ['sponsorEntity' => ['email' => $email]], $emails)],
+            ],
+        ]]))]);
     }
 
     /**
@@ -61,7 +81,10 @@ class FakeGitHubProvider extends AbstractServiceProvider
             // after the client singleton exists.
             $handler = fn ($request, array $options) => (new MockHandler([array_shift(self::$responses) ?? new \RuntimeException('No queued GitHub response')]))($request, $options);
 
-            return new GitHubSponsorsClient(new Client(['handler' => HandlerStack::create($handler)]));
+            $stack = HandlerStack::create($handler);
+            $stack->push(Middleware::history(self::$history));
+
+            return new GitHubSponsorsClient(new Client(['handler' => $stack]));
         });
     }
 }

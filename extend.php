@@ -13,6 +13,7 @@ namespace FoF\GitHubSponsors;
 
 use Flarum\Audit\Extend\Audit;
 use Flarum\Extend;
+use FoF\GitHubSponsors\Api\Controller\TestConnectionController;
 use FoF\GitHubSponsors\Console\UpdateCommand;
 use FoF\GitHubSponsors\Event\AbstractSponsorStatusChanged;
 use FoF\GitHubSponsors\Event\OneTimeSponsorshipStarted;
@@ -33,6 +34,9 @@ return [
 
     (new Extend\ServiceProvider())
         ->register(SupporterGroupsServiceProvider::class),
+
+    (new Extend\Routes('api'))
+        ->post('/fof/github-sponsors/test-connection', 'fof-github-sponsors.test-connection', TestConnectionController::class),
 
     (new Extend\Console())
         ->command(UpdateCommand::class)

@@ -11,6 +11,7 @@ A [Flarum](http://flarum.org) extension that automatically synchronizes your Git
 - 🎯 **Flexible Configuration**: Works with both user and organization sponsor accounts
 - 🔒 **Safe Group Management**: Only manages users it adds, won't interfere with manually assigned groups
 - 🎯 **Two Groups**: Separate groups for active monthly sponsors and for one-time or past sponsors
+- 🩺 **Sync Status and Connection Test**: See the last sync's result on the settings page and test a token before saving it
 - 📝 **Audit Log**: With [Audit](https://docs.flarum.org/extensions/audit) enabled, every status and group change the sync makes is recorded
 
 ## How It Works
@@ -117,6 +118,8 @@ php flarum fof:github-sponsors:update --dry-run -v
 
 ### Monitoring the Sync
 
+- **Status**: the top of the extension's settings page shows when the sync last ran, and why it failed if it did. It also warns when the last run was more than two hours ago, which usually means Flarum's scheduler is not running.
+- **Test connection**: the button on the same page checks the token, account type and login currently in the form, saved or not: that GitHub accepts the token, that the account exists, and that its sponsorships can be read with the token's scopes. It also shows which GitHub account the token belongs to.
 - **Changes**: with the [Audit](https://docs.flarum.org/extensions/audit) extension enabled, every change the sync makes is recorded in the audit log: a sponsor starting or stopping a monthly sponsorship, becoming a one-time sponsor, no longer being a sponsor, or being restored to a group they were missing from. Search the log with `action:fof_github_sponsors.*`, or `user:<username>` for one person.
 - **Errors**: failed syncs (a rejected token, a missing scope, an unknown account) are written to Flarum's log in `storage/logs/`.
 - **Manually**: run the command yourself, with `--dry-run -v` to see what it would change without changing anything.
