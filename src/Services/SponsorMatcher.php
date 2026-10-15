@@ -12,6 +12,7 @@
 namespace FoF\GitHubSponsors\Services;
 
 use Flarum\User\LoginProvider;
+use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
 use Flarum\User\User;
 use Illuminate\Support\Collection;
 
@@ -51,6 +52,30 @@ class SponsorMatcher
             : new Collection();
 
         return $byGitHubAccount->merge($byEmail)->unique('id')->values();
+    }
+
+    /**
+     * Split sponsors into active monthly sponsors and everyone else (one-time
+     * payments and past monthly sponsors).
+     *
+     * @param array<object> $sponsors
+     *
+     * @return array{recurring: array<object>, onetime: array<object>}
+     */
+    public function categorizeSponsors(array $sponsors): array
+    {
+        $recurring = [];
+        $onetime = [];
+
+        foreach ($sponsors as $sponsor) {
+            if (GitHubSponsorsClient::isActiveRecurring($sponsor)) {
+                $recurring[] = $sponsor;
+            } else {
+                $onetime[] = $sponsor;
+            }
+        }
+
+        return ['recurring' => $recurring, 'onetime' => $onetime];
     }
 
     /**

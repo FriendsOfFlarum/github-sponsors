@@ -22,6 +22,9 @@
         "flarum/core": "^2.0.0",
         "guzzlehttp/guzzle": "^7.1"
     },
+    "suggest": {
+        "flarum/audit": "Records every sponsor status and group change the sync makes in the audit log."
+    },
     "authors": [
         {
             "name": "David Sevilla Martin",
@@ -47,7 +50,10 @@
                 "name": "fab fa-github",
                 "backgroundColor": "#e74c3c",
                 "color": "#fff"
-            }
+            },
+            "optional-dependencies": [
+                "flarum/audit"
+            ]
         },
         "flagrow": {
             "discuss": "https://discuss.flarum.org/d/22260"
@@ -65,6 +71,7 @@
         }
     },
     "require-dev": {
+        "flarum/audit": "^2.0",
         "flarum/phpstan": "^2.0.0",
         "flarum/testing": "^2.0.0"
     },

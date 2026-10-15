@@ -36,7 +36,8 @@ class GitHubSponsorsClient
     }
 
     /**
-     * Fetch every active sponsor of a user or organization.
+     * Fetch every public sponsor of a user or organization, current or past, one
+     * sponsorship per GitHub account.
      *
      * Private sponsorships are left out on purpose: the sponsor chose not to be
      * shown, and a public forum group would reveal them.
@@ -64,12 +65,13 @@ class GitHubSponsorsClient
                   $accountType(login: \$login) {
                     name
                     login
-                    sponsorshipsAsMaintainer(first: \$first, after: \$after, activeOnly: true, includePrivate: false) {
+                    sponsorshipsAsMaintainer(first: \$first, after: \$after, activeOnly: false, includePrivate: false) {
                       pageInfo {
                         hasNextPage
                         endCursor
                       }
                       nodes {
+                        isActive
                         isOneTimePayment
                         sponsorEntity {
                           __typename
@@ -108,8 +110,41 @@ class GitHubSponsorsClient
 
         return [
             'maintainer' => $maintainer->name ?: $maintainer->login,
-            'sponsors'   => $sponsors,
+            'sponsors'   => $this->uniqueSponsors($sponsors),
         ];
+    }
+
+    /**
+     * An active monthly sponsorship, as opposed to a one-time payment or a past
+     * monthly sponsorship.
+     */
+    public static function isActiveRecurring(object $sponsorship): bool
+    {
+        return ($sponsorship->isActive ?? false) && !($sponsorship->isOneTimePayment ?? false);
+    }
+
+    /**
+     * Reduce sponsorships to one per GitHub account. An active monthly one wins, so
+     * an old one-time payment never hides a live sponsorship.
+     *
+     * @param array<object> $sponsorships
+     *
+     * @return array<object>
+     */
+    protected function uniqueSponsors(array $sponsorships): array
+    {
+        $unique = [];
+
+        foreach ($sponsorships as $sponsorship) {
+            $account = $sponsorship->sponsorEntity;
+            $key = ($account->__typename ?? 'User').':'.($account->databaseId ?? $account->login ?? spl_object_id($sponsorship));
+
+            if (!isset($unique[$key]) || (!self::isActiveRecurring($unique[$key]) && self::isActiveRecurring($sponsorship))) {
+                $unique[$key] = $sponsorship;
+            }
+        }
+
+        return array_values($unique);
     }
 
     /**

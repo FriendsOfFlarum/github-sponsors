@@ -11,9 +11,17 @@
 
 namespace FoF\GitHubSponsors;
 
+use Flarum\Audit\Extend\Audit;
 use Flarum\Extend;
-use Flarum\Foundation\Paths;
 use FoF\GitHubSponsors\Console\UpdateCommand;
+use FoF\GitHubSponsors\Event\AbstractSponsorStatusChanged;
+use FoF\GitHubSponsors\Event\OneTimeSponsorshipStarted;
+use FoF\GitHubSponsors\Event\RecurringSponsorshipStarted;
+use FoF\GitHubSponsors\Event\RecurringSponsorshipStopped;
+use FoF\GitHubSponsors\Event\SponsorGroupsChanged;
+use FoF\GitHubSponsors\Event\SponsorMembershipAdopted;
+use FoF\GitHubSponsors\Event\SponsorshipEnded;
+use FoF\GitHubSponsors\Providers\SupporterGroupsServiceProvider;
 use Illuminate\Console\Scheduling\Event;
 
 return [
@@ -23,13 +31,43 @@ return [
 
     new Extend\Locales(__DIR__.'/resources/locale'),
 
+    (new Extend\ServiceProvider())
+        ->register(SupporterGroupsServiceProvider::class),
+
     (new Extend\Console())
         ->command(UpdateCommand::class)
         ->schedule(UpdateCommand::class, function (Event $event) {
-            $paths = resolve(Paths::class);
-
             $event->hourly()
-                ->withoutOverlapping()
-                ->appendOutputTo($paths->storage.'/logs/fof-github-sponsors.log');
+                ->withoutOverlapping();
+        }),
+
+    (new Extend\Conditional())
+        ->whenExtensionEnabled('flarum-audit', function () {
+            // user_id and the group ID lists are the keys the Audit browser renders
+            // as a username link and group badges, and that `user:` search matches.
+            $status = fn (AbstractSponsorStatusChanged $event) => [
+                'user_id'         => $event->user->id,
+                'previous_status' => $event->previous?->value,
+                'current_status'  => $event->current?->value,
+                'old_group_ids'   => $event->oldGroupIds,
+                'new_group_ids'   => $event->newGroupIds,
+            ];
+
+            return [
+                (new Audit())
+                    ->listen(RecurringSponsorshipStarted::class, 'fof_github_sponsors.recurring_started', $status)
+                    ->listen(RecurringSponsorshipStopped::class, 'fof_github_sponsors.recurring_stopped', $status)
+                    ->listen(OneTimeSponsorshipStarted::class, 'fof_github_sponsors.onetime_started', $status)
+                    ->listen(SponsorshipEnded::class, 'fof_github_sponsors.sponsorship_ended', $status)
+                    ->listen(SponsorGroupsChanged::class, 'fof_github_sponsors.groups_changed', fn (SponsorGroupsChanged $event) => [
+                        'user_id'       => $event->user->id,
+                        'old_group_ids' => $event->oldGroupIds,
+                        'new_group_ids' => $event->newGroupIds,
+                    ])
+                    ->listen(SponsorMembershipAdopted::class, 'fof_github_sponsors.membership_adopted', fn (SponsorMembershipAdopted $event) => [
+                        'user_id'       => $event->user->id,
+                        'new_group_ids' => $event->groupIds,
+                    ]),
+            ];
         }),
 ];

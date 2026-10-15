@@ -11,14 +11,10 @@
 
 namespace FoF\GitHubSponsors\Event;
 
-use Flarum\User\User;
-
 /**
- * Event fired when a user is removed from the sponsors group.
+ * Implemented by every sponsor status event. Listen to this interface to react to
+ * all of them; the concrete event is an {@see AbstractSponsorStatusChanged}.
  */
-class SponsorRemoved
+interface SponsorStatusChanged
 {
-    public function __construct(public User $user)
-    {
-    }
 }
