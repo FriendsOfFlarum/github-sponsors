@@ -13,6 +13,7 @@ namespace FoF\GitHubSponsors\Services;
 
 use Flarum\Group\Group;
 use Flarum\Settings\SettingsRepositoryInterface;
+use Flarum\User\LoginProvider;
 use Flarum\User\User;
 use FoF\GitHubSponsors\Event\SponsorAdded;
 use FoF\GitHubSponsors\Event\SponsorRemoved;
@@ -33,7 +34,7 @@ class GroupSynchronizer
      * @param Group            $group         The group to synchronize
      * @param Collection<User> $sponsorUsers  Users who are sponsors
      * @param array<string>    $sponsorEmails Sponsor email addresses
-     * @param array<int>       $sponsorIds    Sponsor GitHub database IDs
+     * @param array<string>    $sponsorIds    Sponsor GitHub account IDs, as strings (see SponsorMatcher::getSponsorIds())
      * @param bool             $dryRun        If true, no changes will be made
      * @param array            $sponsors      Raw sponsor data from GitHub API
      *
@@ -90,35 +91,24 @@ class GroupSynchronizer
     }
 
     /**
-     * Find the GitHub sponsor data for a given Flarum user.
+     * The sponsor's GitHub account (databaseId, login, email) for a matched user.
      *
-     * @param User  $user
-     * @param array $sponsors
-     *
-     * @return object|null
+     * @param array<object> $sponsors
      */
-    private function findSponsorDataForUser(User $user, array $sponsors): ?object
+    protected function findSponsorDataForUser(User $user, array $sponsors): ?object
     {
-        foreach ($sponsors as $sponsor) {
-            $sponsorData = $sponsor->sponsor ?? $sponsor;
-            $email = $sponsorData->email ?? null;
-            $id = $sponsorData->databaseId ?? null;
+        $githubIds = $user->loginProviders()->where('provider', 'github')->pluck('identifier')->map(fn ($id) => (string) $id)->all();
 
-            // Match by email
-            if ($email && $user->email === $email) {
-                return $sponsorData;
+        foreach ($sponsors as $sponsor) {
+            $account = $sponsor->sponsorEntity ?? null;
+
+            if (!$account) {
+                continue;
             }
 
-            // Match by GitHub OAuth
-            if ($id) {
-                $hasMatchingProvider = $user->loginProviders()
-                    ->where('provider', 'github')
-                    ->where('identifier', $id)
-                    ->exists();
-
-                if ($hasMatchingProvider) {
-                    return $sponsorData;
-                }
+            if (in_array((string) ($account->databaseId ?? ''), $githubIds, true)
+                || (!empty($account->email) && strtolower($account->email) === strtolower($user->email))) {
+                return $account;
             }
         }
 
@@ -126,45 +116,24 @@ class GroupSynchronizer
     }
 
     /**
-     * Get users who should be removed from the group.
+     * Managed members of the group who no longer match any sponsor.
      *
-     * @param Group         $group
-     * @param Collection    $usersManaging
      * @param array<string> $sponsorEmails
-     * @param array<int>    $sponsorIds
+     * @param array<string> $sponsorIds    GitHub account IDs
      *
-     * @return Collection<User>
+     * @return Collection<int, User>
      */
-    private function getUsersToRemove(
-        Group $group,
-        Collection $usersManaging,
-        array $sponsorEmails,
-        array $sponsorIds
-    ): Collection {
-        // Get all users in the group that are managed by this extension
-        $managedGroupUsers = $group->users()
+    protected function getUsersToRemove(Group $group, Collection $usersManaging, array $sponsorEmails, array $sponsorIds): Collection
+    {
+        $sponsorEmails = array_map('strtolower', $sponsorEmails);
+        $linkedToSponsor = $sponsorIds
+            ? LoginProvider::query()->where('provider', 'github')->whereIn('identifier', array_map('strval', $sponsorIds))->pluck('user_id')->map(fn ($id) => (int) $id)->all()
+            : [];
+
+        return $group->users()
             ->whereIn('users.id', $usersManaging)
-            ->get();
-
-        // Filter out users who are still sponsors (matched by email OR GitHub OAuth)
-        return $managedGroupUsers->filter(function ($user) use ($sponsorEmails, $sponsorIds) {
-            // Check if user is matched by email
-            if (in_array($user->email, $sponsorEmails)) {
-                return false; // Keep this user (don't remove)
-            }
-
-            // Check if user is matched by GitHub OAuth
-            $hasMatchingGithubProvider = $user->loginProviders()
-                ->where('provider', 'github')
-                ->whereIn('identifier', $sponsorIds)
-                ->exists();
-
-            if ($hasMatchingGithubProvider) {
-                return false; // Keep this user (don't remove)
-            }
-
-            return true; // Remove this user
-        });
+            ->get()
+            ->reject(fn (User $user) => in_array((int) $user->id, $linkedToSponsor, true) || in_array(strtolower($user->email), $sponsorEmails, true));
     }
 
     /**

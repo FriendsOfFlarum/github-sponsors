@@ -12,69 +12,29 @@
 namespace FoF\GitHubSponsors\Tests\Unit\Services;
 
 use FoF\GitHubSponsors\Services\SponsorMatcher;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 class SponsorMatcherTest extends TestCase
 {
-    private SponsorMatcher $matcher;
-
-    protected function setUp(): void
+    protected function sponsor(?int $id, ?string $email): object
     {
-        parent::setUp();
-        $this->matcher = new SponsorMatcher();
+        return (object) ['sponsorEntity' => (object) ['databaseId' => $id, 'login' => 'someone', 'email' => $email]];
     }
 
-    public function testGetSponsorEmails()
+    #[Test]
+    public function emails_are_lowercased_unique_and_skip_missing_ones(): void
     {
-        $sponsors = [
-            (object) ['sponsor' => (object) ['email' => 'test1@example.com', 'databaseId' => 1]],
-            (object) ['sponsor' => (object) ['email' => 'test2@example.com', 'databaseId' => 2]],
-            (object) ['sponsor' => (object) ['email' => null, 'databaseId' => 3]], // No email
-        ];
+        $emails = (new SponsorMatcher())->getSponsorEmails([$this->sponsor(1, 'Alice@Example.com'), $this->sponsor(2, 'alice@example.com'), $this->sponsor(3, null)]);
 
-        $emails = $this->matcher->getSponsorEmails($sponsors);
-
-        $this->assertCount(2, $emails);
-        $this->assertTrue($emails->contains('test1@example.com'));
-        $this->assertTrue($emails->contains('test2@example.com'));
+        $this->assertSame(['alice@example.com'], $emails->all());
     }
 
-    public function testGetSponsorIds()
+    #[Test]
+    public function ids_are_unique_strings_for_the_login_providers_lookup(): void
     {
-        $sponsors = [
-            (object) ['sponsor' => (object) ['email' => 'test1@example.com', 'databaseId' => 123]],
-            (object) ['sponsor' => (object) ['email' => 'test2@example.com', 'databaseId' => 456]],
-        ];
+        $ids = (new SponsorMatcher())->getSponsorIds([$this->sponsor(42, null), $this->sponsor(42, null), $this->sponsor(null, 'x@example.com'), $this->sponsor(7, null)]);
 
-        $ids = $this->matcher->getSponsorIds($sponsors);
-
-        $this->assertCount(2, $ids);
-        $this->assertContains(123, $ids);
-        $this->assertContains(456, $ids);
-    }
-
-    public function testGetSponsorIdsFiltersNull()
-    {
-        $sponsors = [
-            (object) ['sponsor' => (object) ['email' => 'test1@example.com', 'databaseId' => 123]],
-            (object) ['sponsor' => (object) ['email' => 'test2@example.com', 'databaseId' => null]],
-        ];
-
-        $ids = $this->matcher->getSponsorIds($sponsors);
-
-        $this->assertCount(1, $ids);
-        $this->assertContains(123, $ids);
-    }
-
-    public function testGetSponsorEmailsRemovesDuplicates()
-    {
-        $sponsors = [
-            (object) ['sponsor' => (object) ['email' => 'test@example.com', 'databaseId' => 1]],
-            (object) ['sponsor' => (object) ['email' => 'test@example.com', 'databaseId' => 2]],
-        ];
-
-        $emails = $this->matcher->getSponsorEmails($sponsors);
-
-        $this->assertCount(1, $emails);
+        $this->assertSame(['42', '7'], $ids);
     }
 }
