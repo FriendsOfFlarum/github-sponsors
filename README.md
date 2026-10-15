@@ -16,10 +16,10 @@ A [Flarum](http://flarum.org) extension that automatically synchronizes your Git
 
 This extension connects your GitHub Sponsors program with your Flarum forum by:
 
-1. **Fetching Sponsors**: Queries GitHub's GraphQL API to retrieve your current sponsors
+1. **Fetching Sponsors**: Queries GitHub's GraphQL API to retrieve all of your current public sponsors, both users and organizations
 2. **Matching Users**: Identifies Flarum users by matching:
-   - Email addresses from GitHub sponsors with Flarum user emails
    - GitHub OAuth provider IDs for users who logged in via GitHub
+   - The sponsor's public GitHub email with a confirmed Flarum user email
 3. **Managing Groups**: Automatically adds sponsors to a designated Flarum group and removes users who are no longer sponsors
 4. **Tracking Changes**: Logs all additions and removals to help you monitor the process
 
@@ -83,6 +83,14 @@ php flarum fof:github-sponsors:update --dry-run
 
 This is useful for testing your configuration before letting the extension make real changes to your groups.
 
+#### Force Mode
+
+If GitHub reports no sponsors at all while the extension still manages group members, the sync stops without changing anything, because removing everyone is far more likely to be a bad API response than a real change. If you really have no sponsors left, confirm it with:
+
+```bash
+php flarum fof:github-sponsors:update --force
+```
+
 #### Verbose Output
 
 Get detailed information about the synchronization process:
@@ -123,15 +131,16 @@ Log output includes:
 
 The extension uses two methods to match GitHub sponsors to Flarum users:
 
-1. **Email Matching**: Direct comparison of sponsor email from GitHub with Flarum user emails
-2. **OAuth Matching**: For users who logged in via GitHub, matches their GitHub ID with sponsor IDs
+1. **OAuth Matching**: For users who logged in via GitHub (for example with [FoF OAuth](https://github.com/FriendsOfFlarum/oauth)), matches their GitHub account ID with the sponsor's
+2. **Email Matching**: Compares the sponsor's public GitHub email with Flarum user emails, ignoring case. Only **confirmed** Flarum emails count: anyone could register with a sponsor's public email, so an unconfirmed one proves nothing
 
 This dual approach maximizes the chance of correctly identifying your sponsors.
 
 ## Important Notes
 
 - The extension only removes the group from users it previously added. It won't affect users who were manually added to the group.
-- Users must have either the same email address as their GitHub account OR have logged into Flarum via GitHub OAuth at least once.
+- Users must have either confirmed the same email address as their public GitHub email OR have logged into Flarum via GitHub OAuth at least once.
+- **Private sponsorships are not synced.** A private sponsor chose not to be shown publicly, and a forum group would reveal them.
 - The GitHub API has rate limits. The extension checks once per hour to stay well within these limits.
 
 ## For Developers: Event System
@@ -146,11 +155,11 @@ Dispatched when a user is added to the sponsors group.
 
 **Properties:**
 - `$user` (Flarum\User\User) - The Flarum user who was added
-- `$sponsorData` (object|null) - GitHub sponsor data including:
-  - `email` - Sponsor's email address
-  - `databaseId` - GitHub user ID
+- `$sponsorData` (object|null) - The sponsor's GitHub account:
+  - `__typename` - `User` or `Organization`
+  - `databaseId` - GitHub account ID
   - `login` - GitHub username
-  - Other fields from the GitHub API
+  - `email` - Public email address, if any
 
 **Example listener:**
 
@@ -205,14 +214,16 @@ return [
 
 ### No sponsors are being synced
 
-- Verify your GitHub token has the correct scopes (`user` and `read:org`)
+- Verify your GitHub token has the correct scopes (`read:user`, `user:email` and `read:org`)
+- Run the command manually: errors now say whether GitHub rejected the token, the token lacks a scope, or the account was not found
 - Check that the account type and login match your GitHub Sponsors account
 - Ensure the cron job is running (`schedule:run`)
 - Check logs in `storage/logs/fof-github-sponsors.log`
 
 ### Some sponsors aren't being matched
 
-- Ensure sponsors have public email addresses on their GitHub profiles
+- Ensure sponsors have public email addresses on their GitHub profiles, and that the matching Flarum email is confirmed
+- Private sponsorships are never synced
 - Alternatively, have them log into your Flarum forum using GitHub OAuth at least once
 
 ## Updating
