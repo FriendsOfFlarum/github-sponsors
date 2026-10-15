@@ -115,6 +115,67 @@ class GitHubSponsorsClient
     }
 
     /**
+     * Check a token can do everything the sync needs, cheaply: authenticate, find
+     * the account, and read its sponsorships (scope errors surface on that query).
+     *
+     * @param string $accountType 'user' or 'organization'
+     *
+     * @throws GitHubSponsorsException
+     *
+     * @return array{account: string|null, maintainer: string, sponsorships: int, withPublicEmail: int} withPublicEmail counts a sample of up to 25 sponsors
+     */
+    public function testConnection(string $apiToken, string $accountType, string $login): array
+    {
+        if (!in_array($accountType, self::ACCOUNT_TYPES, true)) {
+            throw new InvalidArgumentException("Unknown account type '$accountType'");
+        }
+
+        $data = $this->query($apiToken, "
+            query test(\$login: String!) {
+              viewer {
+                login
+              }
+              $accountType(login: \$login) {
+                name
+                login
+                sponsorshipsAsMaintainer(first: 25, activeOnly: false, includePrivate: false) {
+                  totalCount
+                  nodes {
+                    sponsorEntity {
+                      ... on User {
+                        email
+                      }
+                      ... on Organization {
+                        email
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        ", ['login' => $login]);
+
+        $maintainer = $data->$accountType ?? null;
+
+        if (!$maintainer) {
+            throw new GitHubSponsorsException(GitHubSponsorsException::NOT_FOUND, "GitHub $accountType '$login' not found");
+        }
+
+        if (!isset($maintainer->sponsorshipsAsMaintainer->totalCount)) {
+            throw new GitHubSponsorsException(GitHubSponsorsException::INVALID_RESPONSE, 'GitHub returned no sponsorships data');
+        }
+
+        $nodes = (array) ($maintainer->sponsorshipsAsMaintainer->nodes ?? []);
+
+        return [
+            'account'         => $data->viewer->login ?? null,
+            'maintainer'      => $maintainer->name ?: $maintainer->login,
+            'sponsorships'    => (int) $maintainer->sponsorshipsAsMaintainer->totalCount,
+            'withPublicEmail' => count(array_filter($nodes, fn ($node) => !empty($node->sponsorEntity->email))),
+        ];
+    }
+
+    /**
      * An active monthly sponsorship, as opposed to a one-time payment or a past
      * monthly sponsorship.
      */

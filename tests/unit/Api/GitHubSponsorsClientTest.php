@@ -200,4 +200,51 @@ class GitHubSponsorsClientTest extends TestCase
     {
         $this->assertFailsWith(GitHubSponsorsException::INVALID_RESPONSE, [$this->json(['data' => ['organization' => ['name' => 'Flarum', 'login' => 'flarum', 'sponsorshipsAsMaintainer' => null]]])]);
     }
+
+    protected function connectionResponse(?array $organization, int $total = 52): Response
+    {
+        return $this->json(['data' => [
+            'viewer'       => ['login' => 'token-owner'],
+            'organization' => $organization === null ? null : $organization + ['sponsorshipsAsMaintainer' => ['totalCount' => $total, 'nodes' => [['sponsorEntity' => ['email' => 'a@example.com']], ['sponsorEntity' => ['email' => '']]]]],
+        ]]);
+    }
+
+    #[Test]
+    public function a_working_token_reports_its_owner_account_and_sponsorships(): void
+    {
+        $result = $this->client([$this->connectionResponse(['name' => 'Flarum', 'login' => 'flarum'])])->testConnection('token', 'organization', 'flarum');
+
+        $this->assertSame(['account' => 'token-owner', 'maintainer' => 'Flarum', 'sponsorships' => 52, 'withPublicEmail' => 1], $result);
+        $this->assertSame('bearer token', $this->history[0]['request']->getHeaderLine('Authorization'));
+    }
+
+    protected function assertConnectionFailsWith(string $kind, array $responses): void
+    {
+        try {
+            $this->client($responses)->testConnection('token', 'organization', 'flarum');
+            $this->fail("Expected a GitHubSponsorsException of kind $kind");
+        } catch (GitHubSponsorsException $e) {
+            $this->assertSame($kind, $e->kind);
+        }
+    }
+
+    #[Test]
+    public function the_connection_test_spots_a_rejected_token(): void
+    {
+        $this->assertConnectionFailsWith(GitHubSponsorsException::UNAUTHORIZED, [$this->json(['message' => 'Bad credentials'], 401)]);
+    }
+
+    #[Test]
+    public function the_connection_test_spots_an_unknown_account(): void
+    {
+        $this->assertConnectionFailsWith(GitHubSponsorsException::NOT_FOUND, [$this->connectionResponse(null)]);
+    }
+
+    #[Test]
+    public function the_connection_test_spots_a_missing_scope(): void
+    {
+        $this->assertConnectionFailsWith(GitHubSponsorsException::FORBIDDEN, [$this->json([
+            'errors' => [['type' => 'INSUFFICIENT_SCOPES', 'message' => "Your token has not been granted the required scopes to execute this query."]],
+        ])]);
+    }
 }
