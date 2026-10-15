@@ -176,6 +176,76 @@ class GitHubSponsorsClient
     }
 
     /**
+     * Count private sponsors, current (monthly) and past or one-time, without
+     * keeping anything about them: account IDs are read only to count each sponsor
+     * once, and anyone who also sponsors publicly is left to the public list.
+     *
+     * @param array<object> $publicSponsors As returned by {@see fetchSponsors()}
+     *
+     * @throws GitHubSponsorsException
+     *
+     * @return array{recurring: int, onetime: int}
+     */
+    public function countPrivateSponsors(string $apiToken, string $accountType, string $login, array $publicSponsors = []): array
+    {
+        if (!in_array($accountType, self::ACCOUNT_TYPES, true)) {
+            throw new InvalidArgumentException("Unknown account type '$accountType'");
+        }
+
+        $private = [];
+        $cursor = null;
+
+        do {
+            $data = $this->query($apiToken, "
+                query privateSponsors(\$login: String!, \$first: Int!, \$after: String) {
+                  $accountType(login: \$login) {
+                    sponsorshipsAsMaintainer(first: \$first, after: \$after, activeOnly: false, includePrivate: true) {
+                      pageInfo {
+                        hasNextPage
+                        endCursor
+                      }
+                      nodes {
+                        privacyLevel
+                        isActive
+                        isOneTimePayment
+                        sponsorEntity {
+                          __typename
+                          ... on User {
+                            databaseId
+                          }
+                          ... on Organization {
+                            databaseId
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+            ", ['login' => $login, 'first' => self::PAGE_SIZE, 'after' => $cursor]);
+
+            $connection = $data->$accountType->sponsorshipsAsMaintainer ?? null;
+
+            if (!isset($connection->nodes, $connection->pageInfo)) {
+                throw new GitHubSponsorsException(GitHubSponsorsException::INVALID_RESPONSE, 'GitHub returned no sponsorships data');
+            }
+
+            array_push($private, ...array_filter((array) $connection->nodes, fn ($node) => ($node->privacyLevel ?? null) === 'PRIVATE' && isset($node->sponsorEntity)));
+            $cursor = $connection->pageInfo->endCursor ?? null;
+        } while (($connection->pageInfo->hasNextPage ?? false) && $cursor);
+
+        $public = array_map(fn ($sponsor) => $this->accountKey($sponsor), $publicSponsors);
+        $counts = ['recurring' => 0, 'onetime' => 0];
+
+        foreach ($this->uniqueSponsors($private) as $sponsorship) {
+            if (!in_array($this->accountKey($sponsorship), $public, true)) {
+                $counts[self::isActiveRecurring($sponsorship) ? 'recurring' : 'onetime']++;
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
      * An active monthly sponsorship, as opposed to a one-time payment or a past
      * monthly sponsorship.
      */
@@ -197,8 +267,7 @@ class GitHubSponsorsClient
         $unique = [];
 
         foreach ($sponsorships as $sponsorship) {
-            $account = $sponsorship->sponsorEntity;
-            $key = ($account->__typename ?? 'User').':'.($account->databaseId ?? $account->login ?? spl_object_id($sponsorship));
+            $key = $this->accountKey($sponsorship);
 
             if (!isset($unique[$key]) || (!self::isActiveRecurring($unique[$key]) && self::isActiveRecurring($sponsorship))) {
                 $unique[$key] = $sponsorship;
@@ -206,6 +275,16 @@ class GitHubSponsorsClient
         }
 
         return array_values($unique);
+    }
+
+    /**
+     * One key per GitHub account: users and organizations have separate ID spaces.
+     */
+    protected function accountKey(object $sponsorship): string
+    {
+        $account = $sponsorship->sponsorEntity;
+
+        return ($account->__typename ?? 'User').':'.($account->databaseId ?? $account->login ?? spl_object_id($sponsorship));
     }
 
     /**

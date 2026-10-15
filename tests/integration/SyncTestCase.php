@@ -50,6 +50,7 @@ abstract class SyncTestCase extends ConsoleTestCase
         $this->extension(...$this->extensions());
         $this->extend((new Extend\ServiceProvider())->register(FakeGitHubProvider::class)->register(FakeOtherSupporterSource::class));
         FakeGitHubProvider::reset();
+        FakeGitHubProvider::$privateNodes = [];
         FakeOtherSupporterSource::$wants = [];
 
         $this->setting('fof-github-sponsors.api_token', 'token');

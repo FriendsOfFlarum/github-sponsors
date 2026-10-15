@@ -19,6 +19,7 @@ use FoF\GitHubSponsors\Api\GitHubSponsorsException;
 use FoF\GitHubSponsors\Services\SponsorChange;
 use FoF\GitHubSponsors\Services\SponsorMatcher;
 use FoF\GitHubSponsors\Services\SponsorSynchronizer;
+use FoF\GitHubSponsors\Services\SupporterCounts;
 use FoF\GitHubSponsors\Services\SyncStatus;
 use FoF\GitHubSponsors\Sponsor;
 use FoF\GitHubSponsors\SponsorStatus;
@@ -49,6 +50,7 @@ class UpdateCommand extends Command
         protected SponsorMatcher $matcher,
         protected SponsorSynchronizer $synchronizer,
         protected SyncStatus $status,
+        protected SupporterCounts $counts,
         protected LoggerInterface $logger
     ) {
         parent::__construct();
@@ -143,6 +145,8 @@ class UpdateCommand extends Command
             }
 
             $this->info($changes->isEmpty() ? 'No changes needed.' : $changes->count().' users '.($dryRun ? 'would change' : 'changed').'.');
+            $this->recordCounts($apiToken, $accountType, $login, $sponsors, $dryRun);
+
             $this->info('Done.');
             $dryRun || $this->status->recordSuccess(count($sponsors), $changes->count());
         } catch (GitHubSponsorsException $e) {
@@ -167,6 +171,30 @@ class UpdateCommand extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * Count the sponsors a supporters page cannot list by name. A failed private
+     * count keeps the previous one rather than failing the sync.
+     *
+     * @param array<object> $sponsors
+     */
+    protected function recordCounts(string $apiToken, string $accountType, string $login, array $sponsors, bool $dryRun): void
+    {
+        $unmatched = $this->matcher->countUnmatched($sponsors);
+
+        try {
+            $private = $this->client->countPrivateSponsors($apiToken, $accountType, $login, $sponsors);
+        } catch (GitHubSponsorsException $e) {
+            $private = null;
+            $this->warn('Could not count private sponsors: '.$e->getMessage());
+            $this->logger->warning('[fof/github-sponsors] Could not count private sponsors: '.$e->getMessage());
+        }
+
+        $this->info('|> private sponsors: '.($private ? "{$private['recurring']} monthly, {$private['onetime']} one-time or past" : 'unknown'));
+        $this->info("|> without a forum account: {$unmatched['recurring']} monthly, {$unmatched['onetime']} one-time or past");
+
+        $dryRun || $this->counts->record($private, $unmatched);
     }
 
     /**
