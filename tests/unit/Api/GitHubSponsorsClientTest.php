@@ -244,7 +244,7 @@ class GitHubSponsorsClientTest extends TestCase
     public function the_connection_test_spots_a_missing_scope(): void
     {
         $this->assertConnectionFailsWith(GitHubSponsorsException::FORBIDDEN, [$this->json([
-            'errors' => [['type' => 'INSUFFICIENT_SCOPES', 'message' => "Your token has not been granted the required scopes to execute this query."]],
+            'errors' => [['type' => 'INSUFFICIENT_SCOPES', 'message' => 'Your token has not been granted the required scopes to execute this query.']],
         ])]);
     }
 }
