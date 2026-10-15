@@ -23,7 +23,8 @@
         "guzzlehttp/guzzle": "^7.1"
     },
     "suggest": {
-        "flarum/audit": "Records every sponsor status and group change the sync makes in the audit log."
+        "flarum/audit": "Records every sponsor status and group change the sync makes in the audit log.",
+        "flarum/gdpr": "Includes members' sponsor status in their data export, and erases it with their account."
     },
     "authors": [
         {
@@ -52,7 +53,8 @@
                 "color": "#fff"
             },
             "optional-dependencies": [
-                "flarum/audit"
+                "flarum/audit",
+                "flarum/gdpr"
             ]
         },
         "flagrow": {
@@ -72,6 +74,7 @@
     },
     "require-dev": {
         "flarum/audit": "^2.0",
+        "flarum/gdpr": "^2.0",
         "flarum/phpstan": "^2.0.0",
         "flarum/testing": "^2.0.0"
     },

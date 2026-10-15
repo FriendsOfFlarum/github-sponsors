@@ -14,9 +14,11 @@ namespace FoF\GitHubSponsors;
 use Flarum\Api\Resource\ForumResource;
 use Flarum\Audit\Extend\Audit;
 use Flarum\Extend;
+use Flarum\Gdpr\Extend\UserData;
 use FoF\GitHubSponsors\Api\Controller\TestConnectionController;
 use FoF\GitHubSponsors\Api\ForumAttributes;
 use FoF\GitHubSponsors\Console\UpdateCommand;
+use FoF\GitHubSponsors\Data\GitHubSponsor;
 use FoF\GitHubSponsors\Event\AbstractSponsorStatusChanged;
 use FoF\GitHubSponsors\Event\OneTimeSponsorshipStarted;
 use FoF\GitHubSponsors\Event\RecurringSponsorshipStarted;
@@ -78,5 +80,9 @@ return [
                         'new_group_ids' => $event->groupIds,
                     ]),
             ];
-        }),
+        })
+        ->whenExtensionEnabled('flarum-gdpr', fn () => [
+            (new UserData())
+                ->addType(GitHubSponsor::class),
+        ]),
 ];
