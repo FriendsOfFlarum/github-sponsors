@@ -14,6 +14,7 @@ namespace FoF\GitHubSponsors\Tests\integration;
 use FoF\GitHubSponsors\Event\RecurringSponsorshipStopped;
 use FoF\GitHubSponsors\Services\SponsorGroupClaims;
 use FoF\GitHubSponsors\Services\SponsorSynchronizer;
+use FoF\GitHubSponsors\Services\SyncStatus;
 use FoF\GitHubSponsors\Sponsor;
 use FoF\GitHubSponsors\SponsorStatus;
 use FoF\GitHubSponsors\Tests\fixtures\FakeGitHubProvider;
@@ -504,5 +505,59 @@ class UpdateCommandTest extends SyncTestCase
 
         $this->assertMatchesRegularExpression('/^[A-Z][a-z]{2} \d{2}, \d{4} @ \d{2}:\d{2} [AP]M \| Retrieving/m', $output);
         $this->assertDoesNotMatchRegularExpression('/@ \d{2}:\d{2} [AP]M \| [A-Z][a-z]{2} \d{2}, \d{4} @/', $output);
+    }
+
+    /** @return array<string, mixed>|null */
+    protected function lastSync(): ?array
+    {
+        return json_decode($this->database()->table('settings')->where('key', SyncStatus::SETTING)->value('value') ?? 'null', true);
+    }
+
+    #[Test]
+    public function a_successful_sync_records_its_outcome(): void
+    {
+        FakeGitHubProvider::sponsors([$this->sponsor(1002, 'bob-on-github')]);
+
+        $this->sync();
+
+        $last = $this->lastSync();
+        $this->assertTrue($last['ok']);
+        $this->assertSame(1, $last['sponsors']);
+        $this->assertSame(1, $last['changes']);
+        $this->assertNotEmpty($last['at']);
+    }
+
+    #[Test]
+    public function a_failed_sync_records_why(): void
+    {
+        FakeGitHubProvider::reset([new Response(401, [], json_encode(['message' => 'Bad credentials']))]);
+
+        $this->sync();
+
+        $last = $this->lastSync();
+        $this->assertFalse($last['ok']);
+        $this->assertSame('unauthorized', $last['kind']);
+        $this->assertSame('Bad credentials', $last['message']);
+    }
+
+    #[Test]
+    public function a_refused_empty_result_is_recorded_as_a_failure(): void
+    {
+        $this->known(3, SponsorStatus::Recurring, [self::RECURRING_GROUP]);
+        FakeGitHubProvider::sponsors();
+
+        $this->sync();
+
+        $this->assertSame('no_sponsors', $this->lastSync()['kind']);
+    }
+
+    #[Test]
+    public function a_dry_run_does_not_record_an_outcome(): void
+    {
+        FakeGitHubProvider::sponsors([$this->sponsor(1002, 'bob-on-github')]);
+
+        $this->sync(['--dry-run' => true]);
+
+        $this->assertNull($this->lastSync());
     }
 }

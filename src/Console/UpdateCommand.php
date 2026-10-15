@@ -19,6 +19,7 @@ use FoF\GitHubSponsors\Api\GitHubSponsorsException;
 use FoF\GitHubSponsors\Services\SponsorChange;
 use FoF\GitHubSponsors\Services\SponsorMatcher;
 use FoF\GitHubSponsors\Services\SponsorSynchronizer;
+use FoF\GitHubSponsors\Services\SyncStatus;
 use FoF\GitHubSponsors\Sponsor;
 use FoF\GitHubSponsors\SponsorStatus;
 use Illuminate\Console\Command;
@@ -47,6 +48,7 @@ class UpdateCommand extends Command
         protected GitHubSponsorsClient $client,
         protected SponsorMatcher $matcher,
         protected SponsorSynchronizer $synchronizer,
+        protected SyncStatus $status,
         protected LoggerInterface $logger
     ) {
         parent::__construct();
@@ -102,6 +104,7 @@ class UpdateCommand extends Command
                 $message = 'GitHub returned no sponsors, which would end every known sponsorship. No changes made; re-run with --force if this is correct.';
                 $this->error($message);
                 $this->logger->error('[fof/github-sponsors] '.$message);
+                $dryRun || $this->status->recordFailure(SyncStatus::NO_SPONSORS, $message);
 
                 return 1;
             }
@@ -141,13 +144,16 @@ class UpdateCommand extends Command
 
             $this->info($changes->isEmpty() ? 'No changes needed.' : $changes->count().' users '.($dryRun ? 'would change' : 'changed').'.');
             $this->info('Done.');
+            $dryRun || $this->status->recordSuccess(count($sponsors), $changes->count());
         } catch (GitHubSponsorsException $e) {
             $this->handleApiError($e);
+            $dryRun || $this->status->recordFailure($e->kind, $e->getMessage());
 
             return 1;
         } catch (UnexpectedValueException $e) {
             $this->error($e->getMessage());
             $this->logger->error('[fof/github-sponsors] Configuration error: '.$e->getMessage());
+            $dryRun || $this->status->recordFailure(SyncStatus::CONFIGURATION, $e->getMessage());
 
             return 1;
         } catch (Throwable $e) {
@@ -155,6 +161,7 @@ class UpdateCommand extends Command
             $this->logger->error('[fof/github-sponsors] Unexpected error: '.$e->getMessage(), [
                 'exception' => $e,
             ]);
+            $dryRun || $this->status->recordFailure(SyncStatus::UNEXPECTED, $e->getMessage());
 
             return 1;
         }
