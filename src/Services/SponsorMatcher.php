@@ -12,8 +12,8 @@
 namespace FoF\GitHubSponsors\Services;
 
 use Flarum\User\LoginProvider;
-use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
 use Flarum\User\User;
+use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
 use Illuminate\Support\Collection;
 
 class SponsorMatcher

@@ -14,10 +14,10 @@ namespace FoF\GitHubSponsors\Tests\integration;
 use FoF\GitHubSponsors\Event\RecurringSponsorshipStopped;
 use FoF\GitHubSponsors\Services\SponsorGroupClaims;
 use FoF\GitHubSponsors\Services\SponsorSynchronizer;
-use FoF\GitHubSponsors\Tests\fixtures\FakeOtherSupporterSource;
 use FoF\GitHubSponsors\Sponsor;
 use FoF\GitHubSponsors\SponsorStatus;
 use FoF\GitHubSponsors\Tests\fixtures\FakeGitHubProvider;
+use FoF\GitHubSponsors\Tests\fixtures\FakeOtherSupporterSource;
 use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\Attributes\Test;
 

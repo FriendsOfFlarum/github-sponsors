@@ -21,11 +21,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * What the extension knows about one user's sponsorship, and which of their group
  * memberships it owns.
  *
- * @property int               $user_id
+ * @property int                $user_id
  * @property SponsorStatus|null $status
- * @property array<int>|null   $managed_group_ids
- * @property Carbon|null       $status_changed_at
- * @property User              $user
+ * @property array<int>|null    $managed_group_ids
+ * @property Carbon|null        $status_changed_at
+ * @property User               $user
  */
 class Sponsor extends AbstractModel
 {

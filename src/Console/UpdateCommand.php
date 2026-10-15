@@ -193,7 +193,7 @@ class UpdateCommand extends Command
         return match ($status) {
             SponsorStatus::Recurring => 'monthly',
             SponsorStatus::OneTime   => 'one-time or past',
-            null                    => 'none',
+            null                     => 'none',
         };
     }
 

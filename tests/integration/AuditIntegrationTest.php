@@ -12,8 +12,8 @@
 namespace FoF\GitHubSponsors\Tests\integration;
 
 use Flarum\Audit\AuditLogger;
-use FoF\GitHubSponsors\SponsorStatus;
 use FoF\GitHubSponsors\Services\SponsorSynchronizer;
+use FoF\GitHubSponsors\SponsorStatus;
 use FoF\GitHubSponsors\Tests\fixtures\FakeGitHubProvider;
 use PHPUnit\Framework\Attributes\Test;
 
