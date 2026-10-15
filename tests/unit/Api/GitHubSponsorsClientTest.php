@@ -47,9 +47,9 @@ class GitHubSponsorsClientTest extends TestCase
         return new Response($status, ['Content-Type' => 'application/json'] + $headers, json_encode($body));
     }
 
-    protected function sponsor(int $id, string $login, ?string $email = null, string $type = 'User'): array
+    protected function sponsor(int $id, string $login, ?string $email = null, string $type = 'User', bool $active = true, bool $oneTime = false): array
     {
-        return ['isOneTimePayment' => false, 'sponsorEntity' => ['__typename' => $type, 'databaseId' => $id, 'login' => $login, 'email' => $email]];
+        return ['isActive' => $active, 'isOneTimePayment' => $oneTime, 'sponsorEntity' => ['__typename' => $type, 'databaseId' => $id, 'login' => $login, 'email' => $email]];
     }
 
     protected function page(array $nodes, ?string $endCursor = null, bool $hasNextPage = false, string $accountType = 'organization'): Response
@@ -89,6 +89,37 @@ class GitHubSponsorsClientTest extends TestCase
         $this->assertCount(2, $result['sponsors']);
         $this->assertNull($this->sentBodies()[0]['variables']['after']);
         $this->assertSame('cursor-1', $this->sentBodies()[1]['variables']['after']);
+    }
+
+    #[Test]
+    public function past_sponsorships_are_requested_too(): void
+    {
+        $this->client([$this->page([])])->fetchSponsors('token', 'organization', 'flarum');
+
+        $this->assertStringContainsString('activeOnly: false', $this->sentBodies()[0]['query']);
+    }
+
+    #[Test]
+    public function an_active_monthly_sponsorship_wins_over_older_ones_from_the_same_account(): void
+    {
+        $result = $this->client([$this->page([
+            $this->sponsor(1, 'alice', null, 'User', false, true),
+            $this->sponsor(1, 'alice', null, 'User', true, false),
+            $this->sponsor(1, 'alice', null, 'User', false, false),
+            $this->sponsor(1, 'acme', null, 'Organization', true, false),
+        ])])->fetchSponsors('token', 'organization', 'flarum');
+
+        // A user and an organization may share a databaseId space, so they stay apart.
+        $this->assertCount(2, $result['sponsors']);
+        $this->assertTrue(GitHubSponsorsClient::isActiveRecurring($result['sponsors'][0]));
+    }
+
+    #[Test]
+    public function only_an_active_monthly_sponsorship_is_recurring(): void
+    {
+        $this->assertTrue(GitHubSponsorsClient::isActiveRecurring((object) ['isActive' => true, 'isOneTimePayment' => false]));
+        $this->assertFalse(GitHubSponsorsClient::isActiveRecurring((object) ['isActive' => false, 'isOneTimePayment' => false]));
+        $this->assertFalse(GitHubSponsorsClient::isActiveRecurring((object) ['isActive' => true, 'isOneTimePayment' => true]));
     }
 
     #[Test]

@@ -10,18 +10,20 @@ A [Flarum](http://flarum.org) extension that automatically synchronizes your Git
 - 👥 **Smart User Matching**: Matches sponsors via email and GitHub OAuth login
 - 🎯 **Flexible Configuration**: Works with both user and organization sponsor accounts
 - 🔒 **Safe Group Management**: Only manages users it adds, won't interfere with manually assigned groups
-- 📝 **Detailed Logging**: Tracks all changes in dedicated log files
+- 🎯 **Two Groups**: Separate groups for active monthly sponsors and for one-time or past sponsors
+- 📝 **Audit Log**: With [Audit](https://docs.flarum.org/extensions/audit) enabled, every status and group change the sync makes is recorded
 
 ## How It Works
 
 This extension connects your GitHub Sponsors program with your Flarum forum by:
 
-1. **Fetching Sponsors**: Queries GitHub's GraphQL API to retrieve all of your current public sponsors, both users and organizations
+1. **Fetching Sponsors**: Queries GitHub's GraphQL API to retrieve all of your public sponsors, current and past, both users and organizations
 2. **Matching Users**: Identifies Flarum users by matching:
    - GitHub OAuth provider IDs for users who logged in via GitHub
    - The sponsor's public GitHub email with a confirmed Flarum user email
-3. **Managing Groups**: Automatically adds sponsors to a designated Flarum group and removes users who are no longer sponsors
-4. **Tracking Changes**: Logs all additions and removals to help you monitor the process
+3. **Categorizing Sponsors**: Active monthly sponsors are monthly sponsors; one-time sponsors and past monthly sponsors are one-time sponsors
+4. **Managing Groups**: Adds each sponsor to the group for their status, and moves them when it changes, for example from the monthly group to the one-time group when a monthly sponsorship ends
+5. **Tracking Changes**: Remembers each sponsor's status, fires an event when it changes, and records every change in the audit log when [Audit](https://docs.flarum.org/extensions/audit) is enabled
 
 ## Installation
 
@@ -59,7 +61,8 @@ In your Flarum admin panel, navigate to the GitHub Sponsors extension settings:
 - **API Token**: Paste your GitHub personal access token
 - **Account Type**: Choose "user" or "organization" depending on your sponsor account type
 - **Login**: Enter your GitHub username or organization name
-- **Group**: Select which Flarum group to assign to sponsors
+- **Monthly Sponsors Group**: Select which Flarum group active monthly sponsors get
+- **One-Time and Past Sponsors Group** (optional): Select which Flarum group one-time sponsors and past monthly sponsors get. If not set, they are not managed
 
 Save the settings, and the extension will start syncing on the next scheduled run.
 
@@ -112,20 +115,13 @@ Combine both options for detailed preview:
 php flarum fof:github-sponsors:update --dry-run -v
 ```
 
-### Viewing Logs
+### Monitoring the Sync
 
-Check the synchronization logs:
+- **Changes**: with the [Audit](https://docs.flarum.org/extensions/audit) extension enabled, every change the sync makes is recorded in the audit log: a sponsor starting or stopping a monthly sponsorship, becoming a one-time sponsor, no longer being a sponsor, or being restored to a group they were missing from. Search the log with `action:fof_github_sponsors.*`, or `user:<username>` for one person.
+- **Errors**: failed syncs (a rejected token, a missing scope, an unknown account) are written to Flarum's log in `storage/logs/`.
+- **Manually**: run the command yourself, with `--dry-run -v` to see what it would change without changing anything.
 
-```bash
-tail -f storage/logs/fof-github-sponsors.log
-```
-
-Log output includes:
-- Number of sponsors found on GitHub
-- Number of sponsors matched to Flarum users
-- Users added to the group (with `+ #userID username`)
-- Users removed from the group (with `- #userID username`)
-- Any API errors or configuration issues
+The first sync after installing or upgrading records every sponsor's current status without announcing them as new sponsors. Only group memberships it restores on that run are recorded.
 
 ## How User Matching Works
 
@@ -136,79 +132,86 @@ The extension uses two methods to match GitHub sponsors to Flarum users:
 
 This dual approach maximizes the chance of correctly identifying your sponsors.
 
+## How Group Membership Works
+
+- **The sync owns a membership** it added, or one it found already in place (for example added by hand) when the user's sponsorship justifies it. Taking over such a membership is reported in the command output and recorded in the audit log.
+- **It only removes memberships it owns**, and only when no other supporter source still wants the user in that group. With [Open Collective](https://github.com/FriendsOfFlarum/open-collective) managing the same groups, someone who supports through both never loses a group because one of them ended.
+- **A supporter is never in both groups.** The monthly group wins: a monthly sponsor is taken out of the one-time group, even if they were added to it by hand, and anyone already in the monthly group is not also put in the one-time group.
+- **Members nobody wants are left alone.** Hand-added members who are not sponsors are never touched.
+- **Sources never fight.** A membership is only added when some source wants it and only removed when none does, so the syncs settle on one result. Give every source the same monthly and one-time groups: if they are mapped the other way round, a supporter can end up in both groups, but nothing flips back and forth.
+
 ## Important Notes
 
-- The extension only removes the group from users it previously added. It won't affect users who were manually added to the group.
 - Users must have either confirmed the same email address as their public GitHub email OR have logged into Flarum via GitHub OAuth at least once.
 - **Private sponsorships are not synced.** A private sponsor chose not to be shown publicly, and a forum group would reveal them.
 - The GitHub API has rate limits. The extension checks once per hour to stay well within these limits.
 
 ## For Developers: Event System
 
-This extension dispatches events when sponsors are added or removed, allowing other extensions to react to these changes.
+The extension remembers each matched user's sponsor status (none, one-time or monthly) and fires an event whenever it changes. Events describe the sponsorship, not the groups: they fire for every matched user, including members an admin added to a group by hand, and whether or not a one-time group is configured.
 
-### Available Events
+### Status events
 
-#### `FoF\GitHubSponsors\Event\SponsorAdded`
+| Event | Fired when |
+|---|---|
+| `FoF\GitHubSponsors\Event\RecurringSponsorshipStarted` | A user becomes an active monthly sponsor, new or upgrading from a one-time or past sponsorship |
+| `FoF\GitHubSponsors\Event\RecurringSponsorshipStopped` | A monthly sponsorship ends; the user remains a past sponsor |
+| `FoF\GitHubSponsors\Event\OneTimeSponsorshipStarted` | A user who was not a sponsor makes a one-time sponsorship |
+| `FoF\GitHubSponsors\Event\SponsorshipEnded` | A user is no longer a sponsor at all, for example once their GitHub account no longer matches |
 
-Dispatched when a user is added to the sponsors group.
+All four extend `AbstractSponsorStatusChanged` and implement `SponsorStatusChanged`, so you can listen to the interface to react to every change. Each carries:
 
-**Properties:**
-- `$user` (Flarum\User\User) - The Flarum user who was added
-- `$sponsorData` (object|null) - The sponsor's GitHub account:
-  - `__typename` - `User` or `Organization`
-  - `databaseId` - GitHub account ID
-  - `login` - GitHub username
-  - `email` - Public email address, if any
+- `$user` (`Flarum\User\User`)
+- `$previous`, `$current` (`FoF\GitHubSponsors\SponsorStatus|null`): the status before and after; `null` means not a sponsor
+- `$account` (`object|null`): the sponsor's GitHub account (`__typename`, `databaseId`, `login`, `email`); `null` when the sponsorship ended
+- `$oldGroupIds`, `$newGroupIds` (`int[]`): the user's groups before and after this sync
 
-**Example listener:**
+### Group repairs
 
-```php
-use Flarum\Extend;
-use FoF\GitHubSponsors\Event\SponsorAdded;
+`FoF\GitHubSponsors\Event\SponsorGroupsChanged` fires when the sync changes a user's groups without their status changing, such as re-adding a sponsor who was missing from their group. It carries `$user`, `$oldGroupIds` and `$newGroupIds`.
 
-return [
-    (new Extend\Event)
-        ->listen(SponsorAdded::class, function (SponsorAdded $event) {
-            $user = $event->user;
-            $githubId = $event->sponsorData->databaseId ?? null;
-
-            // Your custom logic here
-            // e.g., send a welcome email, grant additional permissions, etc.
-        }),
-];
-```
-
-#### `FoF\GitHubSponsors\Event\SponsorRemoved`
-
-Dispatched when a user is removed from the sponsors group (sponsorship ended).
-
-**Properties:**
-- `$user` (Flarum\User\User) - The Flarum user who was removed
-
-**Example listener:**
+### Example listener
 
 ```php
 use Flarum\Extend;
-use FoF\GitHubSponsors\Event\SponsorRemoved;
+use FoF\GitHubSponsors\Event\RecurringSponsorshipStopped;
 
 return [
-    (new Extend\Event)
-        ->listen(SponsorRemoved::class, function (SponsorRemoved $event) {
-            $user = $event->user;
-
-            // Your custom logic here
-            // e.g., send a thank you message, revoke special access, etc.
+    (new Extend\Event())
+        ->listen(RecurringSponsorshipStopped::class, function (RecurringSponsorshipStopped $event) {
+            // e.g. thank $event->user for their support so far
         }),
 ];
 ```
 
 ### Notes on Events
 
-- Events are **not dispatched** when running with the `--dry-run` flag
-- Events fire after the database changes have been made
-- The `SponsorAdded` event includes raw GitHub data for additional context
-- These events only fire for automated changes, not manual group assignments
+- Events fire after the database changes have been made, and never in `--dry-run` mode.
+- The first sync after installing or upgrading records statuses without status events, so existing sponsors are not announced as new. Group repairs on that run still fire `SponsorGroupsChanged`.
+- Group memberships are only removed where the extension owns them (it added or adopted them) and no other supporter source still wants them. A hand-added member is adopted once their sponsorship justifies the group.
+
+### Sharing groups with other supporter sources
+
+Supporter sources that manage the same groups ask each other before removing anyone. Each registers an invokable under the `fof.supporter-groups` container tag that takes user IDs and a group ID and returns the subset of those users it wants in that group:
+
+```php
+$container->tag([MySourceClaims::class], 'fof.supporter-groups');
+
+class MySourceClaims
+{
+    /** @param array<int> $userIds @return array<int> */
+    public function __invoke(array $userIds, int $groupId): array
+    {
+        // the users your source currently puts in $groupId
+    }
+}
+```
+
+The contract is a plain string tag, so sources need no shared package. Answer with what your source would actually do (for example, do not claim a one-time supporter who is already in the monthly group), and never call other sources from it. This extension's own answer comes from `FoF\GitHubSponsors\Services\SponsorGroupClaims`. Adopting a membership fires `FoF\GitHubSponsors\Event\SponsorMembershipAdopted` (`$user`, `$groupIds`).
+
+### Upgrading from 1.x
+
+`SponsorAdded` and `SponsorRemoved` were removed in 2.0. `SponsorAdded` maps to `RecurringSponsorshipStarted` or `OneTimeSponsorshipStarted`; `SponsorRemoved` maps to `RecurringSponsorshipStopped` or `SponsorshipEnded`.
 
 ## Troubleshooting
 
@@ -218,7 +221,7 @@ return [
 - Run the command manually: errors now say whether GitHub rejected the token, the token lacks a scope, or the account was not found
 - Check that the account type and login match your GitHub Sponsors account
 - Ensure the cron job is running (`schedule:run`)
-- Check logs in `storage/logs/fof-github-sponsors.log`
+- Check Flarum's log in `storage/logs/` for errors, and the audit log for changes
 
 ### Some sponsors aren't being matched
 

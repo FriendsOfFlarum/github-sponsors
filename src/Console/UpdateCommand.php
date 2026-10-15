@@ -16,9 +16,13 @@ use Flarum\Group\Group;
 use Flarum\Settings\SettingsRepositoryInterface;
 use FoF\GitHubSponsors\Api\GitHubSponsorsClient;
 use FoF\GitHubSponsors\Api\GitHubSponsorsException;
-use FoF\GitHubSponsors\Services\GroupSynchronizer;
+use FoF\GitHubSponsors\Services\SponsorChange;
 use FoF\GitHubSponsors\Services\SponsorMatcher;
+use FoF\GitHubSponsors\Services\SponsorSynchronizer;
+use FoF\GitHubSponsors\Sponsor;
+use FoF\GitHubSponsors\SponsorStatus;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
@@ -42,7 +46,7 @@ class UpdateCommand extends Command
         protected SettingsRepositoryInterface $settings,
         protected GitHubSponsorsClient $client,
         protected SponsorMatcher $matcher,
-        protected GroupSynchronizer $synchronizer,
+        protected SponsorSynchronizer $synchronizer,
         protected LoggerInterface $logger
     ) {
         parent::__construct();
@@ -63,17 +67,24 @@ class UpdateCommand extends Command
             $apiToken = $this->settings->get('fof-github-sponsors.api_token');
             $accountType = $this->settings->get('fof-github-sponsors.account_type');
             $login = strtolower((string) $this->settings->get('fof-github-sponsors.login'));
-            $groupId = $this->settings->get('fof-github-sponsors.group_id');
+            $recurringGroupId = $this->settings->get('fof-github-sponsors.group_id');
+            $onetimeGroupId = $this->settings->get('fof-github-sponsors.onetime_group_id');
 
-            $this->validateSettings($apiToken, $accountType, $login, $groupId);
+            $this->validateSettings($apiToken, $accountType, $login, $recurringGroupId);
 
-            $group = Group::findOrFail((int) $groupId);
+            $recurringGroup = Group::findOrFail((int) $recurringGroupId);
+            $onetimeGroup = $onetimeGroupId ? Group::find((int) $onetimeGroupId) : null;
+
+            if ($onetimeGroupId && !$onetimeGroup) {
+                throw new UnexpectedValueException("Invalid one-time group ID: '$onetimeGroupId'");
+            }
 
             if ($verbose) {
                 $this->info('Configuration:');
                 $this->info("|> Account type: $accountType");
                 $this->info("|> Login: $login");
-                $this->info("|> Target group: {$group->name_singular} (ID: {$group->id})");
+                $this->info("|> Monthly sponsors group: {$recurringGroup->name_singular} (ID: {$recurringGroup->id})");
+                $this->info('|> One-time and past sponsors group: '.($onetimeGroup ? "{$onetimeGroup->name_singular} (ID: {$onetimeGroup->id})" : 'Not configured'));
                 $this->line('');
             }
 
@@ -84,16 +95,20 @@ class UpdateCommand extends Command
 
             $this->info('|> '.count($sponsors)." sponsors of {$result['maintainer']} ($accountType)");
 
-            // An empty result removes every managed member in one run. That is right
+            // An empty result ends every known sponsorship in one run. That is right
             // for an account that truly lost all its sponsors, but far more often it
             // means the API answered oddly, so it needs an explicit --force.
-            if (count($sponsors) === 0 && !$this->option('force') && $this->synchronizer->getManagedUsers()->isNotEmpty()) {
-                $message = 'GitHub returned no sponsors, which would remove every managed group member. No changes made; re-run with --force if this is correct.';
+            if (count($sponsors) === 0 && !$this->option('force') && Sponsor::query()->exists()) {
+                $message = 'GitHub returned no sponsors, which would end every known sponsorship. No changes made; re-run with --force if this is correct.';
                 $this->error($message);
                 $this->logger->error('[fof/github-sponsors] '.$message);
 
                 return 1;
             }
+
+            $categorized = $this->matcher->categorizeSponsors($sponsors);
+            $this->info('|> '.count($categorized['recurring']).' active monthly sponsors');
+            $this->info('|> '.count($categorized['onetime']).' one-time or past sponsors');
 
             if ($verbose && count($sponsors) > 0) {
                 $this->line('');
@@ -102,49 +117,29 @@ class UpdateCommand extends Command
                 foreach ($sponsors as $sponsor) {
                     $account = $sponsor->sponsorEntity;
                     $email = ($account->email ?? '') ?: 'no public email';
-                    $this->info("|> {$account->login} ({$account->__typename}, ID {$account->databaseId}) | $email");
+                    $type = GitHubSponsorsClient::isActiveRecurring($sponsor) ? 'monthly' : 'one-time or past';
+                    $this->info("|> {$account->login} ({$account->__typename}, ID {$account->databaseId}) | $email [$type]");
                 }
 
                 $this->line('');
             }
 
-            $sponsorUsers = $this->matcher->matchSponsorsToUsers($sponsors);
-            $unmatched = count($sponsors) - $sponsorUsers->count();
-
-            $this->info("|> -> {$sponsorUsers->count()} registered, ".max(0, $unmatched).' not registered');
-
-            if ($verbose && $sponsorUsers->isNotEmpty()) {
-                $this->line('');
-                $this->info('Matched Flarum users:');
-                $this->outputUsers($sponsorUsers, '=');
-                $this->line('');
+            if ($this->synchronizer->isBaseline()) {
+                $this->info('First sync: recording current sponsor statuses without firing sponsor events.');
             }
 
-            $this->info($dryRun ? 'Calculating group changes...' : 'Applying group changes...');
+            $this->info($dryRun ? 'Calculating changes...' : 'Applying changes...');
 
-            $changes = $this->synchronizer->synchronize(
-                $group,
-                $sponsorUsers,
-                $this->matcher->getSponsorEmails($sponsors)->all(),
-                $this->matcher->getSponsorIds($sponsors),
-                $dryRun,
-                $sponsors
-            );
+            $changes = $this->synchronizer->synchronize($sponsors, $recurringGroup, $onetimeGroup, $dryRun);
+            $groupNames = Group::query()
+                ->whereIn('id', $changes->flatMap(fn (SponsorChange $change) => [...$change->addedGroupIds, ...$change->removedGroupIds, ...$change->adoptedGroupIds])->unique()->values())
+                ->pluck('name_singular', 'id');
 
-            if ($changes['removed']->count() > 0) {
-                $verbose && $this->info('Removing users from group:');
-                $this->outputUsers($changes['removed'], '-');
+            foreach ($changes as $change) {
+                $this->info($this->describe($change, $groupNames));
             }
 
-            if ($changes['added']->count() > 0) {
-                $verbose && $this->info('Adding users to group:');
-                $this->outputUsers($changes['added'], '+');
-            }
-
-            if ($changes['removed']->count() === 0 && $changes['added']->count() === 0) {
-                $this->info('No changes needed.');
-            }
-
+            $this->info($changes->isEmpty() ? 'No changes needed.' : $changes->count().' users '.($dryRun ? 'would change' : 'changed').'.');
             $this->info('Done.');
         } catch (GitHubSponsorsException $e) {
             $this->handleApiError($e);
@@ -165,6 +160,41 @@ class UpdateCommand extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * @param Collection<int, string> $groupNames Group names by ID
+     */
+    protected function describe(SponsorChange $change, Collection $groupNames): string
+    {
+        $parts = [];
+
+        if ($change->statusChanged()) {
+            $parts[] = $this->statusLabel($change->previous).' → '.$this->statusLabel($change->current);
+        }
+
+        foreach ($change->addedGroupIds as $id) {
+            $parts[] = '+'.($groupNames[$id] ?? "group #$id");
+        }
+
+        foreach ($change->removedGroupIds as $id) {
+            $parts[] = '-'.($groupNames[$id] ?? "group #$id");
+        }
+
+        foreach ($change->adoptedGroupIds as $id) {
+            $parts[] = 'took over '.($groupNames[$id] ?? "group #$id");
+        }
+
+        return "|> #{$change->user->id} {$change->user->username}: ".implode(', ', $parts);
+    }
+
+    protected function statusLabel(?SponsorStatus $status): string
+    {
+        return match ($status) {
+            SponsorStatus::Recurring => 'monthly',
+            SponsorStatus::OneTime   => 'one-time or past',
+            null                     => 'none',
+        };
     }
 
     /**
@@ -220,18 +250,8 @@ class UpdateCommand extends Command
     }
 
     /**
-     * @param iterable<\Flarum\User\User> $users
-     */
-    protected function outputUsers(iterable $users, string $prefix): void
-    {
-        foreach ($users as $user) {
-            $this->info("|> $prefix #{$user->id} {$user->username}");
-        }
-    }
-
-    /**
-     * Prefix every non-empty line with the current time, so the appended scheduler
-     * log shows when each run happened. info(), warn() and error() all route here.
+     * Prefix every non-empty line with the current time, so a captured run shows
+     * when it happened. info(), warn() and error() all route here.
      */
     public function line($string, $style = null, $verbosity = null)
     {

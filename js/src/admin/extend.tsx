@@ -44,5 +44,21 @@ export default [
         return o;
       }, {}),
       required: true,
+    }))
+    .setting(() => ({
+      setting: 'fof-github-sponsors.onetime_group_id',
+      type: 'select',
+      label: app.translator.trans('fof-github-sponsors.admin.settings.onetime_group_label'),
+      help: app.translator.trans('fof-github-sponsors.admin.settings.onetime_group_help'),
+      options: app.store.all<Group>('groups').reduce<Record<string, any>>(
+        (o, g) => {
+          const id = g.id();
+          if (id) {
+            o[id] = g.nameSingular();
+          }
+          return o;
+        },
+        { '': app.translator.trans('fof-github-sponsors.admin.settings.onetime_group_none') }
+      ),
     })),
 ];

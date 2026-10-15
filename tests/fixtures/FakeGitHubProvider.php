@@ -57,7 +57,11 @@ class FakeGitHubProvider extends AbstractServiceProvider
     public function register(): void
     {
         $this->container->singleton(GitHubSponsorsClient::class, function () {
-            return new GitHubSponsorsClient(new Client(['handler' => HandlerStack::create(new MockHandler(self::$responses))]));
+            // Read the queue per request, so a test can queue responses for a second run
+            // after the client singleton exists.
+            $handler = fn ($request, array $options) => (new MockHandler([array_shift(self::$responses) ?? new \RuntimeException('No queued GitHub response')]))($request, $options);
+
+            return new GitHubSponsorsClient(new Client(['handler' => HandlerStack::create($handler)]));
         });
     }
 }
