@@ -126,6 +126,12 @@ php flarum fof:github-sponsors:update --dry-run -v
 
 The first sync after installing or upgrading records every sponsor's current status without announcing them as new sponsors. Only group memberships it restores on that run are recorded.
 
+### Privacy (GDPR)
+
+With the [GDPR](https://docs.flarum.org/extensions/gdpr) extension enabled, the extension's record of a member's sponsorship (their status, when it last changed, and which groups the sync manages for them) is included in their data export, and erased when their account is anonymized or deleted. Erasing it means the sync simply forgets the member: it does not report their sponsorship as ended, so no event fires and no audit entry is written for an erased account.
+
+Sponsor emails and GitHub accounts are only read from GitHub while a sync runs; they are never stored. Private sponsors are only ever counted.
+
 ## How User Matching Works
 
 The extension uses two methods to match GitHub sponsors to Flarum users:
