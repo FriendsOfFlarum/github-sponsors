@@ -21,6 +21,25 @@ fof-github-sponsors:
       onetime_group_help: Select which Flarum user group one-time sponsors and past monthly sponsors should be added to. If not set, they are not managed.
       onetime_group_none: None
 
+    status:
+      heading: Sync status
+      never_run: The sync has not run yet. It runs hourly through Flarum's scheduler, so check that the scheduler is set up.
+      last_success: "Last sync {time}: {sponsors} sponsors, {changes} changes."
+      last_failure: "Last sync {time} failed: {reason}"
+      stale: The last sync was more than two hours ago. Check that Flarum's scheduler is running.
+      test_button: Test connection
+      test_success: "Connected to {maintainer} as {account}. {sponsorships} public sponsorships found."
+      request_failed: The connection test could not be run.
+      reasons:
+        unauthorized: GitHub rejected the token. It may have expired or been revoked.
+        forbidden: The token is missing a required scope. It needs "read:user", "user:email" and "read:org".
+        not_found: GitHub user or organization not found. Check the account type and login.
+        rate_limited: GitHub's rate limit was reached. The next sync will try again.
+        network: Could not reach GitHub.
+        configuration: The token, account type, login or group settings are incomplete.
+        no_sponsors: GitHub returned no sponsors, so nothing was changed. Run the sync with --force if this is correct.
+        other: GitHub returned an unexpected response.
+
 # Audit log entries, rendered by flarum/audit when it is enabled.
 flarum-audit:
   lib:

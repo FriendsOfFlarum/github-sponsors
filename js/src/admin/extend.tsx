@@ -2,9 +2,23 @@ import Extend from 'flarum/common/extenders';
 import app from 'flarum/admin/app';
 import Group from 'flarum/common/models/Group';
 import Link from 'flarum/common/components/Link';
+import type ExtensionPage from 'flarum/admin/components/ExtensionPage';
+import SyncStatusPanel from './components/SyncStatusPanel';
 
 export default [
   new Extend.Admin()
+    // Re-run on every render with the page as `this`, so the test uses unsaved form values.
+    .customSetting(function (this: ExtensionPage) {
+      return (
+        <SyncStatusPanel
+          credentials={() => ({
+            apiToken: this.setting('fof-github-sponsors.api_token')(),
+            accountType: this.setting('fof-github-sponsors.account_type')(),
+            login: this.setting('fof-github-sponsors.login')(),
+          })}
+        />
+      );
+    }, 100)
     .setting(() => ({
       setting: 'fof-github-sponsors.api_token',
       type: 'password',
