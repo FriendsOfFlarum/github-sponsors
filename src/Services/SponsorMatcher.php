@@ -18,64 +18,70 @@ use Illuminate\Support\Collection;
 class SponsorMatcher
 {
     /**
-     * Match GitHub sponsors to Flarum users.
+     * Match GitHub sponsors to Flarum users, by the GitHub account linked through
+     * OAuth or by the sponsor's public email.
      *
-     * Uses two matching strategies:
-     * 1. Direct email matching between sponsor emails and Flarum user emails
-     * 2. GitHub OAuth provider matching (sponsor GitHub ID -> login_providers -> Flarum user)
+     * An email match requires a confirmed address: anyone can register with a
+     * sponsor's public GitHub email, so an unconfirmed one proves nothing.
      *
-     * @param array $sponsors Array of sponsor data from GitHub API
+     * @param array<object> $sponsors Sponsorship nodes from {@see \FoF\GitHubSponsors\Api\GitHubSponsorsClient::fetchSponsors()}
      *
-     * @return Collection<User>
+     * @return Collection<int, User>
      */
     public function matchSponsorsToUsers(array $sponsors): Collection
     {
-        $sponsors = collect($sponsors);
+        $ids = $this->getSponsorIds($sponsors);
+        $emails = $this->getSponsorEmails($sponsors);
 
-        $sponsorUsersIds = $sponsors->pluck('sponsor.databaseId')->all();
-        $sponsorUsersEmails = $sponsors
-            ->pluck('sponsor.email')
-            ->merge(
-                LoginProvider::query()
-                    ->where('provider', 'github')
-                    ->whereIn('identifier', $sponsorUsersIds)
-                    ->join('users', 'login_providers.user_id', '=', 'users.id')
-                    ->pluck('users.email')
-            )
-            ->filter()
-            ->unique();
+        $byGitHubAccount = $ids
+            ? User::query()
+                ->whereIn('id', LoginProvider::query()->where('provider', 'github')->whereIn('identifier', $ids)->select('user_id'))
+                ->get()
+            : new Collection();
 
-        return User::query()->whereIn('email', $sponsorUsersEmails)->get();
+        // Compared lowercased in PHP; both spellings are queried so the indexed
+        // lookup also matches on case-sensitive databases (PostgreSQL).
+        $rawEmails = collect($sponsors)->map(fn ($sponsor) => $sponsor->sponsorEntity->email ?? null)->filter();
+        $byEmail = $emails->isNotEmpty()
+            ? User::query()
+                ->where('is_email_confirmed', true)
+                ->whereIn('email', $emails->merge($rawEmails)->unique()->values())
+                ->get()
+                ->filter(fn (User $user) => $emails->contains(strtolower($user->email)))
+            : new Collection();
+
+        return $byGitHubAccount->merge($byEmail)->unique('id')->values();
     }
 
     /**
-     * Get all sponsor emails from the sponsor data.
+     * @param array<object> $sponsors
      *
-     * @param array $sponsors Array of sponsor data from GitHub API
-     *
-     * @return Collection<string>
+     * @return Collection<int, lowercase-string&non-falsy-string> Unique
      */
     public function getSponsorEmails(array $sponsors): Collection
     {
         return collect($sponsors)
-            ->pluck('sponsor.email')
+            ->map(fn ($sponsor) => isset($sponsor->sponsorEntity->email) ? strtolower($sponsor->sponsorEntity->email) : null)
             ->filter()
-            ->unique();
+            ->unique()
+            ->values();
     }
 
     /**
-     * Get all sponsor GitHub database IDs from the sponsor data.
+     * GitHub account IDs, as strings: `login_providers.identifier` is a string
+     * column, and PostgreSQL will not compare it with integers.
      *
-     * @param array $sponsors Array of sponsor data from GitHub API
+     * @param array<object> $sponsors
      *
-     * @return array<int>
+     * @return array<int, string>
      */
     public function getSponsorIds(array $sponsors): array
     {
         return collect($sponsors)
-            ->pluck('sponsor.databaseId')
+            ->map(fn ($sponsor) => isset($sponsor->sponsorEntity->databaseId) ? (string) $sponsor->sponsorEntity->databaseId : null)
             ->filter()
             ->unique()
+            ->values()
             ->all();
     }
 }
