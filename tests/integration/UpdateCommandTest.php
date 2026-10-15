@@ -14,6 +14,7 @@ namespace FoF\GitHubSponsors\Tests\integration;
 use FoF\GitHubSponsors\Event\RecurringSponsorshipStopped;
 use FoF\GitHubSponsors\Services\SponsorGroupClaims;
 use FoF\GitHubSponsors\Services\SponsorSynchronizer;
+use FoF\GitHubSponsors\Services\SupporterCounts;
 use FoF\GitHubSponsors\Services\SyncStatus;
 use FoF\GitHubSponsors\Sponsor;
 use FoF\GitHubSponsors\SponsorStatus;
@@ -559,5 +560,74 @@ class UpdateCommandTest extends SyncTestCase
         $this->sync(['--dry-run' => true]);
 
         $this->assertNull($this->lastSync());
+    }
+
+    /** @return array<string, mixed>|null */
+    protected function storedCounts(): ?array
+    {
+        return json_decode($this->database()->table('settings')->where('key', SupporterCounts::SETTING)->value('value') ?? 'null', true);
+    }
+
+    protected function countPrivateAndPublic(): void
+    {
+        FakeGitHubProvider::$privateNodes = [
+            ['privacyLevel' => 'PRIVATE', 'isActive' => true, 'isOneTimePayment' => false, 'sponsorEntity' => ['__typename' => 'User', 'databaseId' => 7001]],
+            ['privacyLevel' => 'PRIVATE', 'isActive' => false, 'isOneTimePayment' => false, 'sponsorEntity' => ['__typename' => 'User', 'databaseId' => 7002]],
+        ];
+        FakeGitHubProvider::sponsors([
+            $this->sponsor(1002, 'bob-on-github'),
+            $this->sponsor(9999, 'stranger-monthly'),
+            $this->sponsor(9998, 'stranger-past', null, 'past'),
+        ]);
+    }
+
+    #[Test]
+    public function a_sync_records_counts_of_private_and_unmatched_sponsors(): void
+    {
+        $this->countPrivateAndPublic();
+
+        $output = $this->sync();
+
+        $this->assertSame(['private' => ['recurring' => 1, 'onetime' => 1], 'unmatched' => ['recurring' => 1, 'onetime' => 1]], $this->storedCounts());
+        $this->assertStringContainsString('private sponsors: 1 monthly, 1 one-time or past', $output);
+    }
+
+    #[Test]
+    public function the_counts_are_public_forum_attributes(): void
+    {
+        $this->setting(SupporterCounts::SETTING, json_encode(['private' => ['recurring' => 1, 'onetime' => 2], 'unmatched' => ['recurring' => 3, 'onetime' => 4]]));
+
+        $response = $this->send($this->request('GET', '/api'));
+        $attributes = json_decode((string) $response->getBody(), true)['data']['attributes'];
+
+        $this->assertSame(1, $attributes['githubSponsorsPrivateRecurring']);
+        $this->assertSame(2, $attributes['githubSponsorsPrivateOnetime']);
+        $this->assertSame(3, $attributes['githubSponsorsUnmatchedRecurring']);
+        $this->assertSame(4, $attributes['githubSponsorsUnmatchedOnetime']);
+    }
+
+    #[Test]
+    public function a_failed_private_count_keeps_the_previous_one_without_failing_the_sync(): void
+    {
+        $this->setting(SupporterCounts::SETTING, json_encode(['private' => ['recurring' => 5, 'onetime' => 6], 'unmatched' => ['recurring' => 0, 'onetime' => 0]]));
+        $this->countPrivateAndPublic();
+        array_pop(FakeGitHubProvider::$responses);
+        FakeGitHubProvider::$responses[] = new Response(502, [], 'Bad gateway');
+
+        $output = $this->sync();
+
+        $this->assertSame(['private' => ['recurring' => 5, 'onetime' => 6], 'unmatched' => ['recurring' => 1, 'onetime' => 1]], $this->storedCounts());
+        $this->assertStringContainsString('Could not count private sponsors', $output);
+        $this->assertTrue($this->lastSync()['ok']);
+    }
+
+    #[Test]
+    public function a_dry_run_does_not_record_counts(): void
+    {
+        $this->countPrivateAndPublic();
+
+        $this->sync(['--dry-run' => true]);
+
+        $this->assertNull($this->storedCounts());
     }
 }

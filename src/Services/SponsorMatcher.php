@@ -55,6 +55,42 @@ class SponsorMatcher
     }
 
     /**
+     * How many sponsors match no forum account, by linked GitHub account or by
+     * confirmed email, split like {@see categorizeSponsors()}.
+     *
+     * @param array<object> $sponsors
+     *
+     * @return array{recurring: int, onetime: int}
+     */
+    public function countUnmatched(array $sponsors): array
+    {
+        $ids = $this->getSponsorIds($sponsors);
+        $emails = $this->getSponsorEmails($sponsors);
+
+        $linked = $ids
+            ? LoginProvider::query()->where('provider', 'github')->whereIn('identifier', $ids)->pluck('identifier')->map(fn ($id) => (string) $id)->all()
+            : [];
+        $rawEmails = collect($sponsors)->map(fn ($sponsor) => $sponsor->sponsorEntity->email ?? null)->filter();
+        $confirmed = $emails->isNotEmpty()
+            ? User::query()->where('is_email_confirmed', true)->whereIn('email', $emails->merge($rawEmails)->unique()->values())->pluck('email')->map(fn ($email) => strtolower($email))->all()
+            : [];
+
+        $counts = ['recurring' => 0, 'onetime' => 0];
+
+        foreach ($sponsors as $sponsor) {
+            $account = $sponsor->sponsorEntity;
+            $matched = in_array((string) ($account->databaseId ?? ''), $linked, true)
+                || (!empty($account->email) && in_array(strtolower($account->email), $confirmed, true));
+
+            if (!$matched) {
+                $counts[GitHubSponsorsClient::isActiveRecurring($sponsor) ? 'recurring' : 'onetime']++;
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
      * Split sponsors into active monthly sponsors and everyone else (one-time
      * payments and past monthly sponsors).
      *

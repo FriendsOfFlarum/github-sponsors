@@ -31,6 +31,9 @@ class FakeGitHubProvider extends AbstractServiceProvider
     /** @var array<int, array{request: \Psr\Http\Message\RequestInterface}> */
     public static array $history = [];
 
+    /** @var array<array<string, mixed>> Private sponsorship nodes returned to the private count query that follows {@see sponsors()} */
+    public static array $privateNodes = [];
+
     public static function reset(array $responses = []): void
     {
         self::$responses = $responses;
@@ -70,6 +73,11 @@ class FakeGitHubProvider extends AbstractServiceProvider
                 'sponsorshipsAsMaintainer' => ['pageInfo' => ['hasNextPage' => $more, 'endCursor' => $more ? "cursor-$i" : null], 'nodes' => $nodes],
             ]]]));
         }
+
+        // The sync then counts private sponsors with one more query.
+        $responses[] = new Response(200, ['Content-Type' => 'application/json'], json_encode(['data' => ['organization' => [
+            'sponsorshipsAsMaintainer' => ['pageInfo' => ['hasNextPage' => false, 'endCursor' => null], 'nodes' => self::$privateNodes],
+        ]]]));
 
         self::reset($responses);
     }

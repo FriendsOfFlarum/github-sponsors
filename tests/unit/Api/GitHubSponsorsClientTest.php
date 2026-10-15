@@ -247,4 +247,44 @@ class GitHubSponsorsClientTest extends TestCase
             'errors' => [['type' => 'INSUFFICIENT_SCOPES', 'message' => 'Your token has not been granted the required scopes to execute this query.']],
         ])]);
     }
+
+    protected function privatePage(array $nodes, ?string $endCursor = null, bool $hasNextPage = false): Response
+    {
+        return $this->json(['data' => ['organization' => ['sponsorshipsAsMaintainer' => ['pageInfo' => ['hasNextPage' => $hasNextPage, 'endCursor' => $endCursor], 'nodes' => $nodes]]]]);
+    }
+
+    protected function privateNode(int $id, string $privacy, bool $active, bool $oneTime = false, string $type = 'User'): array
+    {
+        return ['privacyLevel' => $privacy, 'isActive' => $active, 'isOneTimePayment' => $oneTime, 'sponsorEntity' => ['__typename' => $type, 'databaseId' => $id]];
+    }
+
+    #[Test]
+    public function private_sponsors_are_counted_once_each_and_split_by_status(): void
+    {
+        $counts = $this->client([
+            $this->privatePage([
+                $this->privateNode(1, 'PRIVATE', true),
+                $this->privateNode(1, 'PRIVATE', false),
+                $this->privateNode(2, 'PRIVATE', false),
+                $this->privateNode(3, 'PUBLIC', true),
+            ], 'next', true),
+            $this->privatePage([$this->privateNode(4, 'PRIVATE', true, true)]),
+        ])->countPrivateSponsors('token', 'organization', 'flarum');
+
+        // 1: monthly (its past sponsorship does not count again); 2: past; 3: public, not counted; 4: one-time payment.
+        $this->assertSame(['recurring' => 1, 'onetime' => 2], $counts);
+        $this->assertStringContainsString('includePrivate: true', $this->sentBodies()[0]['query']);
+        $this->assertSame('next', $this->sentBodies()[1]['variables']['after']);
+    }
+
+    #[Test]
+    public function a_private_sponsor_who_also_sponsors_publicly_is_left_to_the_public_list(): void
+    {
+        $public = [(object) ['isActive' => true, 'isOneTimePayment' => false, 'sponsorEntity' => (object) ['__typename' => 'User', 'databaseId' => 1, 'login' => 'alice']]];
+
+        $counts = $this->client([$this->privatePage([$this->privateNode(1, 'PRIVATE', false), $this->privateNode(2, 'PRIVATE', true)])])
+            ->countPrivateSponsors('token', 'organization', 'flarum', $public);
+
+        $this->assertSame(['recurring' => 1, 'onetime' => 0], $counts);
+    }
 }

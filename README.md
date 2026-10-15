@@ -193,6 +193,19 @@ return [
 - The first sync after installing or upgrading records statuses without status events, so existing sponsors are not announced as new. Group repairs on that run still fire `SponsorGroupsChanged`.
 - Group memberships are only removed where the extension owns them (it added or adopted them) and no other supporter source still wants them. A hand-added member is adopted once their sponsorship justifies the group.
 
+### Sponsor counts on the API
+
+A supporters page can only list sponsors who match a forum account. To show the rest, the forum API resource (`/api`, `app.forum.attribute(...)`) carries four public counts, refreshed by each sync:
+
+| Attribute | Counts |
+|---|---|
+| `githubSponsorsPrivateRecurring` | Private sponsors with an active monthly sponsorship |
+| `githubSponsorsPrivateOnetime` | Private sponsors who sponsored once or in the past |
+| `githubSponsorsUnmatchedRecurring` | Public monthly sponsors with no matching forum account |
+| `githubSponsorsUnmatchedOnetime` | Public one-time or past sponsors with no matching forum account |
+
+Nothing about a private sponsor is stored: the sync reads their account IDs only to count each sponsor once.
+
 ### Sharing groups with other supporter sources
 
 Supporter sources that manage the same groups ask each other before removing anyone. Each registers an invokable under the `fof.supporter-groups` container tag that takes user IDs and a group ID and returns the subset of those users it wants in that group:
