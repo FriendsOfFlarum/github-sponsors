@@ -68,7 +68,7 @@ export default class SyncStatusPanel extends Component<SyncStatusPanelAttrs> {
       ) : (
         <Alert type="error" dismissible={false}>
           {app.translator.trans('fof-github-sponsors.admin.status.last_failure', { time, reason: this.reason(last.kind) })}
-          {last.message ? <p className="helpText">{last.message}</p> : null}
+          {last.message ? <div className="GitHubSponsorsStatus-detail">{last.message}</div> : null}
         </Alert>
       ),
       stale ? <Alert dismissible={false}>{app.translator.trans('fof-github-sponsors.admin.status.stale')}</Alert> : null,
@@ -90,7 +90,7 @@ export default class SyncStatusPanel extends Component<SyncStatusPanelAttrs> {
       return (
         <Alert type="error" dismissible={false}>
           {this.reason(this.result.kind)}
-          <p className="helpText">{this.result.message}</p>
+          {this.result.message ? <div className="GitHubSponsorsStatus-detail">{this.result.message}</div> : null}
         </Alert>
       );
     }
